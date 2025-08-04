@@ -823,7 +823,16 @@
                 // API responses loaded successfully
 
                 // Extract leads array from response
-                allLeads = leadsData.leads || [];
+                const rawLeads = leadsData.leads || [];
+                // Filter out inactive duplicates and test data
+                allLeads = rawLeads.filter(lead => {
+                    const status = lead.status || '';
+                    const practiceName = (lead.practice_name || '').toUpperCase();
+                    return status !== 'inactive_duplicate' && 
+                           !practiceName.includes('TEST') && 
+                           !practiceName.includes('UNKNOWN') &&
+                           !practiceName.includes('PLACEHOLDER');
+                });
                 summaryData = summaryResponseData;
 
                 // Processed leads successfully
