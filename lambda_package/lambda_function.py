@@ -208,6 +208,55 @@ def get_user_by_id(user_id):
         print(f"Error getting user by ID: {e}")
         return None
 
+def assign_leads_to_new_agent(agent_id, count=20):
+    """Assign unassigned leads to a new agent"""
+    try:
+        # Get all leads from DynamoDB
+        response = leads_table.scan()
+        all_leads = response.get('Items', [])
+        
+        # Find unassigned leads (assigned_user_id is None or doesn't exist)
+        unassigned_leads = [
+            lead for lead in all_leads 
+            if not lead.get('assigned_user_id') or lead.get('assigned_user_id') == 'null'
+        ]
+        
+        # Filter out inactive duplicates and test data
+        quality_unassigned = [
+            lead for lead in unassigned_leads
+            if lead.get('status') != 'inactive_duplicate' and
+            not any(test_phrase in (lead.get('practice_name', '') or '').upper() 
+                   for test_phrase in ['TEST', 'UNKNOWN', 'PLACEHOLDER'])
+        ]
+        
+        # Sort by score (highest first)
+        quality_unassigned.sort(key=lambda x: x.get('score', 0), reverse=True)
+        
+        # Assign up to 'count' leads
+        assigned_count = 0
+        for lead in quality_unassigned[:count]:
+            try:
+                # Update lead assignment in DynamoDB
+                leads_table.update_item(
+                    Key={'id': int(lead['id'])},
+                    UpdateExpression='SET assigned_user_id = :agent_id, updated_at = :updated_at',
+                    ExpressionAttributeValues={
+                        ':agent_id': agent_id,
+                        ':updated_at': datetime.utcnow().isoformat()
+                    }
+                )
+                assigned_count += 1
+                print(f"✅ Assigned lead {lead['id']} ({lead.get('practice_name', 'Unknown')}) to agent {agent_id}")
+            except Exception as e:
+                print(f"❌ Failed to assign lead {lead.get('id')}: {e}")
+                continue
+        
+        return assigned_count
+        
+    except Exception as e:
+        print(f"❌ Error in assign_leads_to_new_agent: {e}")
+        return 0
+
 def initialize_default_users():
     """Initialize default users in DynamoDB if they don't exist"""
     default_users = [
@@ -1031,11 +1080,24 @@ def lambda_handler(event, context):
             try:
                 users_table.put_item(Item=new_user)
                 
-                return create_response(201, {
+                # If creating an agent, automatically assign leads
+                assigned_count = 0
+                if role == 'agent':
+                    assigned_count = assign_leads_to_new_agent(new_user_id, 20)
+                    print(f"✅ Assigned {assigned_count} leads to new agent {username}")
+                
+                response_data = {
                     "message": f"User {username} created successfully",
                     "user": {k: v for k, v in new_user.items() if k != 'password'},
                     "default_password": password if password == 'admin123' else None
-                })
+                }
+                
+                # Add lead assignment info for agents
+                if role == 'agent':
+                    response_data["leads_assigned"] = assigned_count
+                
+                return create_response(201, response_data)
+                
             except Exception as e:
                 return create_response(500, {"detail": f"Failed to create user: {str(e)}"})
         
