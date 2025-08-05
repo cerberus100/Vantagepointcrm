@@ -719,7 +719,7 @@ def lambda_handler(event, context):
                 return create_response(401, {"detail": "Invalid credentials"})
         
         # Authentication check for protected endpoints
-        protected_endpoints = ['/api/v1/leads', '/api/v1/auth/me', '/api/v1/admin/analytics', '/api/v1/summary', '/api/v1/users']
+        protected_endpoints = ['/api/v1/leads', '/api/v1/auth/me', '/api/v1/admin/analytics', '/api/v1/summary', '/api/v1/users', '/api/v1/reports']
         if any(path.startswith(endpoint) for endpoint in protected_endpoints):
             auth_header = headers.get('Authorization', headers.get('authorization', ''))
             if not auth_header or not auth_header.startswith('Bearer '):
