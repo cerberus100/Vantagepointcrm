@@ -349,6 +349,19 @@ def get_manager_sales_stats():
     
     return sorted(manager_stats, key=lambda x: x['closed_won'], reverse=True)
 
+
+def calculate_days_to_close(created_at, closed_at):
+    """Calculate the number of days between creation and closing"""
+    if not created_at or not closed_at:
+        return 0
+    
+    try:
+        created = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        closed = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+        return (closed - created).days
+    except:
+        return 0
+
 def get_all_leads():
     """Get all leads from DynamoDB"""
     try:
@@ -937,6 +950,106 @@ def lambda_handler(event, context):
                 }
             })
         
+        
+        # GET /api/v1/reports/commission - Commission/Sales Report
+        if path == '/api/v1/reports/commission' and method == 'GET':
+            # Check authorization
+            if current_user.get('role') not in ['admin', 'manager']:
+                return create_response(403, {"detail": "Admin or Manager access required"})
+            
+            # Get query parameters
+            query_params = event.get('queryStringParameters', {}) or {}
+            start_date = query_params.get('start_date')
+            end_date = query_params.get('end_date')
+            user_id = query_params.get('user_id')
+            
+            logger.info(f"📊 Commission report requested by {current_user['username']} (role: {current_user['role']})")
+            
+            # Get all leads that are CLOSED_WON
+            all_leads = get_all_leads()
+            closed_leads = [l for l in all_leads if l.get('status') == 'CLOSED_WON' and l.get('closed_at')]
+            
+            # Apply role-based filtering
+            if current_user['role'] == 'manager':
+                # Managers see only their team's sales
+                all_users = get_all_users()
+                team_agents = [u for u in all_users if u.get('manager_id') == current_user['id']]
+                team_ids = [agent['id'] for agent in team_agents] + [current_user['id']]
+                closed_leads = [l for l in closed_leads if l.get('closed_by_user_id') in team_ids]
+            
+            # Apply date filtering if provided
+            if start_date:
+                closed_leads = [l for l in closed_leads if l.get('closed_at', '') >= start_date]
+            if end_date:
+                closed_leads = [l for l in closed_leads if l.get('closed_at', '') <= end_date]
+            
+            # Apply user filtering if provided
+            if user_id:
+                closed_leads = [l for l in closed_leads if str(l.get('closed_by_user_id')) == user_id]
+            
+            # Build detailed sales records
+            sales_records = []
+            total_sales = 0
+            
+            for lead in closed_leads:
+                record = {
+                    "lead_id": lead.get('id'),
+                    "practice_name": lead.get('practice_name'),
+                    "owner_name": lead.get('owner_name'),
+                    "city": lead.get('city'),
+                    "state": lead.get('state'),
+                    "closed_by_user_id": lead.get('closed_by_user_id'),
+                    "closed_by_username": lead.get('closed_by_username', 'Unknown'),
+                    "closed_at": lead.get('closed_at'),
+                    "sale_amount": lead.get('sale_amount', 0),
+                    "lead_score": lead.get('score'),
+                    "lead_priority": lead.get('priority'),
+                    "days_to_close": calculate_days_to_close(lead.get('created_at'), lead.get('closed_at'))
+                }
+                sales_records.append(record)
+                total_sales += record['sale_amount']
+            
+            # Sort by closed date (newest first)
+            sales_records.sort(key=lambda x: x['closed_at'], reverse=True)
+            
+            # Calculate summary statistics
+            summary = {
+                "total_sales": len(sales_records),
+                "total_amount": total_sales,
+                "average_amount": round(total_sales / len(sales_records), 2) if sales_records else 0,
+                "date_range": {
+                    "start": start_date or (min([s['closed_at'] for s in sales_records]) if sales_records else None),
+                    "end": end_date or (max([s['closed_at'] for s in sales_records]) if sales_records else None)
+                }
+            }
+            
+            # Group by user for summary
+            user_summary = {}
+            for record in sales_records:
+                user_key = record['closed_by_username']
+                if user_key not in user_summary:
+                    user_summary[user_key] = {
+                        "user_id": record['closed_by_user_id'],
+                        "username": user_key,
+                        "total_sales": 0,
+                        "total_amount": 0
+                    }
+                user_summary[user_key]['total_sales'] += 1
+                user_summary[user_key]['total_amount'] += record['sale_amount']
+            
+            return create_response(200, {
+                "success": True,
+                "summary": summary,
+                "user_summary": list(user_summary.values()),
+                "sales_records": sales_records,
+                "filters_applied": {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "user_id": user_id,
+                    "role_filter": current_user['role']
+                }
+            })
+
         return create_response(404, {"detail": "Endpoint not found"})
         
     except Exception as e:

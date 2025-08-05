@@ -1034,14 +1034,37 @@
             document.getElementById('editPriority').value = lead.priority || '';
             document.getElementById('editPtan').value = lead.ptan || '';
             document.getElementById('editEinTin').value = lead.ein_tin || '';
+            
+            // Set sale amount if it exists
+            if (lead.sale_amount !== undefined && lead.sale_amount !== null) {
+                document.getElementById('editSaleAmount').value = lead.sale_amount;
+            } else {
+                document.getElementById('editSaleAmount').value = '';
+            }
 
             // Show modal
             const modal = new bootstrap.Modal(document.getElementById('editLeadModal'));
             modal.show();
+            
+            // Show/hide sale amount field based on status
+            toggleSaleAmount();
+        }
+        
+        function toggleSaleAmount() {
+            const status = document.getElementById('editStatus').value;
+            const saleAmountRow = document.getElementById('saleAmountRow');
+            
+            if (status === 'CLOSED_WON') {
+                saleAmountRow.style.display = 'block';
+            } else {
+                saleAmountRow.style.display = 'none';
+                document.getElementById('editSaleAmount').value = '';
+            }
         }
 
         async function saveLeadChanges() {
             const leadId = document.getElementById('editLeadId').value;
+            const status = document.getElementById('editStatus').value;
             
             const updatedLead = {
                 practice_name: document.getElementById('editPracticeName').value,
@@ -1053,11 +1076,17 @@
                 state: document.getElementById('editState').value,
                 zip_code: document.getElementById('editZipCode').value,
                 specialty: document.getElementById('editSpecialty').value,
-                status: document.getElementById('editStatus').value,
+                status: status,
                 priority: document.getElementById('editPriority').value,
                 ptan: document.getElementById('editPtan').value,
                 ein_tin: document.getElementById('editEinTin').value
             };
+            
+            // Include sale amount if status is CLOSED_WON
+            if (status === 'CLOSED_WON') {
+                const saleAmount = document.getElementById('editSaleAmount').value;
+                updatedLead.sale_amount = parseFloat(saleAmount) || 0;
+            }
 
             try {
                 const token = localStorage.getItem('token');
@@ -1282,11 +1311,17 @@
                 
                 // Show organizational structure for admins
                 showOrganizationForAdmin();
+                
+                // Show commission reports for admins and managers
+                showCommissionReportsForAuthorized();
             } else if (currentUser.role === 'manager') {
                 console.log('👨‍💼 Manager role detected - showing Create Agent button');
                 createUserBtn.style.display = 'none';
                 createAgentBtn.style.display = 'block';
                 console.log('✅ Create Agent button should now be visible');
+                
+                // Show commission reports for managers too
+                showCommissionReportsForAuthorized();
             } else {
                 console.log('👤 Agent/other role detected - hiding all management buttons');
                 createUserBtn.style.display = 'none';
@@ -2029,6 +2064,285 @@
                 detailsRow.style.display = detailsRow.style.display === 'none' ? 'table-row' : 'none';
             }
         }
+        
+        // Show commission reports for admins and managers
+        function showCommissionReportsForAuthorized() {
+            if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) {
+                const commissionSection = document.getElementById('commissionReportSection');
+                if (commissionSection) {
+                    commissionSection.style.display = 'block';
+                    
+                    // Show user filter for admins only
+                    if (currentUser.role === 'admin') {
+                        document.getElementById('commissionUserFilter').style.display = 'inline-block';
+                        loadUsersForCommissionFilter();
+                    }
+                    
+                    // Set default dates (last 30 days)
+                    const endDate = new Date();
+                    const startDate = new Date();
+                    startDate.setDate(startDate.getDate() - 30);
+                    
+                    document.getElementById('commissionStartDate').value = startDate.toISOString().split('T')[0];
+                    document.getElementById('commissionEndDate').value = endDate.toISOString().split('T')[0];
+                    
+                    loadCommissionReport();
+                }
+            }
+        }
+        
+        // Load users for commission filter (admin only)
+        async function loadUsersForCommissionFilter() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/v1/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const users = data.users || [];
+                    const select = document.getElementById('commissionUserFilter');
+                    
+                    // Clear existing options except "All Users"
+                    select.innerHTML = '<option value="">All Users</option>';
+                    
+                    // Add user options
+                    users.forEach(user => {
+                        const option = document.createElement('option');
+                        option.value = user.id;
+                        option.textContent = `${user.full_name || user.username} (${user.role})`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load users for filter:', error);
+            }
+        }
+        
+        // Load commission report
+        async function loadCommissionReport() {
+            console.log('💰 Loading commission report...');
+            
+            const container = document.getElementById('commissionReportContainer');
+            const startDate = document.getElementById('commissionStartDate').value;
+            const endDate = document.getElementById('commissionEndDate').value;
+            const userId = document.getElementById('commissionUserFilter').value;
+            
+            try {
+                // Show loading state
+                container.innerHTML = `
+                    <div style="text-align: center; color: #666; padding: 40px;">
+                        <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 10px;"></i>
+                        <div>Loading commission report...</div>
+                    </div>
+                `;
+                
+                // Build query parameters
+                const params = new URLSearchParams();
+                if (startDate) params.append('start_date', startDate);
+                if (endDate) params.append('end_date', endDate);
+                if (userId) params.append('user_id', userId);
+                
+                const token = localStorage.getItem('token');
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/v1/reports/commission?${params}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to load commission report: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('💰 Commission report loaded:', data);
+                
+                // Store for export
+                window.lastCommissionReport = data;
+                
+                renderCommissionReport(data);
+                
+            } catch (error) {
+                console.error('❌ Failed to load commission report:', error);
+                container.innerHTML = `
+                    <div style="text-align: center; color: #e74c3c; padding: 40px;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
+                        <div>Failed to load commission report</div>
+                        <div style="font-size: 0.875rem; margin-top: 10px;">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+        
+        // Render commission report
+        function renderCommissionReport(data) {
+            const container = document.getElementById('commissionReportContainer');
+            
+            if (!data || !data.sales_records) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No sales data available</div>';
+                return;
+            }
+            
+            let html = `
+                <!-- Summary Stats -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.875rem; color: #666;">Total Sales</div>
+                        <div style="font-size: 2rem; font-weight: 600; color: #2c3e50;">${data.summary.total_sales}</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.875rem; color: #666;">Total Revenue</div>
+                        <div style="font-size: 2rem; font-weight: 600; color: #27ae60;">$${data.summary.total_amount.toLocaleString()}</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.875rem; color: #666;">Average Sale</div>
+                        <div style="font-size: 2rem; font-weight: 600; color: #3498db;">$${data.summary.average_amount.toLocaleString()}</div>
+                    </div>
+                </div>
+                
+                <!-- User Summary -->
+                <div style="margin-bottom: 30px;">
+                    <h3 style="margin: 0 0 15px 0; color: #2c3e50;">Sales by User</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
+            `;
+            
+            // Add user summaries
+            data.user_summary.forEach(user => {
+                html += `
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                        <div style="font-weight: 600; margin-bottom: 10px;">${user.username}</div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Sales: ${user.total_sales}</span>
+                            <span style="color: #27ae60; font-weight: 600;">$${user.total_amount.toLocaleString()}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                    </div>
+                </div>
+                
+                <!-- Detailed Sales Records -->
+                <div>
+                    <h3 style="margin: 0 0 15px 0; color: #2c3e50;">Detailed Sales Records</h3>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; min-width: 800px;">
+                            <thead>
+                                <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                    <th style="padding: 12px; text-align: left;">Date</th>
+                                    <th style="padding: 12px; text-align: left;">Sales Rep</th>
+                                    <th style="padding: 12px; text-align: left;">Practice</th>
+                                    <th style="padding: 12px; text-align: left;">Location</th>
+                                    <th style="padding: 12px; text-align: right;">Amount</th>
+                                    <th style="padding: 12px; text-align: center;">Days to Close</th>
+                                    <th style="padding: 12px; text-align: center;">Lead Score</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+            
+            // Add sales records
+            if (data.sales_records.length === 0) {
+                html += `
+                    <tr>
+                        <td colspan="7" style="padding: 40px; text-align: center; color: #666;">No sales found for the selected period</td>
+                    </tr>
+                `;
+            } else {
+                data.sales_records.forEach(record => {
+                    const closedDate = new Date(record.closed_at).toLocaleDateString();
+                    const amount = record.sale_amount || 0;
+                    
+                    html += `
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 12px;">${closedDate}</td>
+                            <td style="padding: 12px;">
+                                <div style="font-weight: 600;">${record.closed_by_username}</div>
+                                <div style="font-size: 0.875rem; color: #666;">ID: ${record.closed_by_user_id}</div>
+                            </td>
+                            <td style="padding: 12px;">
+                                <div>${record.practice_name}</div>
+                                <div style="font-size: 0.875rem; color: #666;">${record.owner_name}</div>
+                            </td>
+                            <td style="padding: 12px;">${record.city}, ${record.state}</td>
+                            <td style="padding: 12px; text-align: right; font-weight: 600; color: #27ae60;">$${amount.toLocaleString()}</td>
+                            <td style="padding: 12px; text-align: center;">${record.days_to_close} days</td>
+                            <td style="padding: 12px; text-align: center;">
+                                <span style="background: ${record.lead_priority === 'A+' ? '#e74c3c' : record.lead_priority === 'A' ? '#f39c12' : '#3498db'}; 
+                                            color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.875rem;">
+                                    ${record.lead_priority} (${record.lead_score})
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        // Export commission report to CSV
+        function exportCommissionReport() {
+            if (!window.lastCommissionReport || !window.lastCommissionReport.sales_records) {
+                alert('No report data to export. Please load a report first.');
+                return;
+            }
+            
+            const data = window.lastCommissionReport;
+            
+            // Create CSV header
+            let csv = 'Date,Sales Rep,User ID,Practice Name,Owner,City,State,Amount,Days to Close,Lead Score,Lead Priority\\n';
+            
+            // Add data rows
+            data.sales_records.forEach(record => {
+                const row = [
+                    new Date(record.closed_at).toLocaleDateString(),
+                    record.closed_by_username,
+                    record.closed_by_user_id,
+                    `"${record.practice_name.replace(/"/g, '""')}"`,
+                    `"${record.owner_name.replace(/"/g, '""')}"`,
+                    record.city,
+                    record.state,
+                    record.sale_amount || 0,
+                    record.days_to_close,
+                    record.lead_score,
+                    record.lead_priority
+                ];
+                csv += row.join(',') + '\\n';
+            });
+            
+            // Add summary section
+            csv += '\\n\\nSUMMARY\\n';
+            csv += `Total Sales,${data.summary.total_sales}\\n`;
+            csv += `Total Revenue,$${data.summary.total_amount}\\n`;
+            csv += `Average Sale,$${data.summary.average_amount}\\n`;
+            
+            // Create download
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `commission_report_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('📥 Commission report exported successfully');
+        }
     });
     </script>
 </head>
@@ -2149,6 +2463,36 @@
                 <div style="text-align: center; color: #666; padding: 40px;">
                     <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 10px;"></i>
                     <div>Loading manager sales data...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Commission Reports (Admin & Manager) -->
+        <section id="commissionReportSection" class="section" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    Commission Reports
+                </h2>
+                <div class="action-buttons">
+                    <input type="date" id="commissionStartDate" style="margin-right: 10px;" onchange="loadCommissionReport()">
+                    <span style="margin-right: 10px;">to</span>
+                    <input type="date" id="commissionEndDate" style="margin-right: 20px;" onchange="loadCommissionReport()">
+                    <select id="commissionUserFilter" style="margin-right: 20px; display: none;" onchange="loadCommissionReport()">
+                        <option value="">All Users</option>
+                    </select>
+                    <button class="btn-primary" onclick="loadCommissionReport()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <button class="btn-primary" onclick="exportCommissionReport()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+            <div id="commissionReportContainer" style="background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 20px;">
+                <div style="text-align: center; color: #666; padding: 40px;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 10px;"></i>
+                    <div>Loading commission report...</div>
                 </div>
             </div>
         </section>
@@ -2392,13 +2736,23 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Status</label>
-                                <select id="editStatus" class="form-control">
-                                    <option value="new">New</option>
-                                    <option value="contacted">Contacted</option>
-                                    <option value="qualified">Qualified</option>
-                                    <option value="sold">Sold</option>
-                                    <option value="disposed">Disposed</option>
+                                <select id="editStatus" class="form-control" onchange="toggleSaleAmount()">
+                                    <option value="NEW">New</option>
+                                    <option value="CONTACTED">Contacted</option>
+                                    <option value="QUALIFIED">Qualified</option>
+                                    <option value="CLOSED_WON">Closed Won (Sale)</option>
+                                    <option value="CLOSED_LOST">Closed Lost</option>
                                 </select>
+                            </div>
+                        </div>
+                        <div class="row mt-3" id="saleAmountRow" style="display: none;">
+                            <div class="col-md-6">
+                                <label class="form-label">Sale Amount</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" id="editSaleAmount" class="form-control" step="0.01" min="0" placeholder="0.00">
+                                </div>
+                                <small class="text-muted">Enter the sale amount for commission tracking</small>
                             </div>
                         </div>
                         <div class="row mt-3">
