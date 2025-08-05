@@ -216,17 +216,26 @@ def assign_leads_to_new_agent(agent_id, count=20):
         all_leads = response.get('Items', [])
         
         # Find unassigned leads (assigned_user_id is None or doesn't exist)
+        # ALSO exclude sold/disposed leads that should stay with original agent
         unassigned_leads = [
             lead for lead in all_leads 
-            if not lead.get('assigned_user_id') or lead.get('assigned_user_id') == 'null'
+            if (not lead.get('assigned_user_id') or lead.get('assigned_user_id') == 'null') and
+            lead.get('status') not in ['CLOSED_WON', 'CLOSED_LOST', 'disposed', 'sold']
         ]
         
-        # Filter out inactive duplicates and test data
+        # Enhanced filtering for fake/test data and quality control
+        fake_patterns = [
+            'TEST', 'UNKNOWN', 'PLACEHOLDER', 'UNAUTHORIZED', 'UPDATE', 'ATTEMPT',
+            'FAKE', 'DEMO', 'SAMPLE', 'DEBUG', 'AGENT UPDATED', 'EXAMPLE'
+        ]
+        
         quality_unassigned = [
             lead for lead in unassigned_leads
             if lead.get('status') != 'inactive_duplicate' and
-            not any(test_phrase in (lead.get('practice_name', '') or '').upper() 
-                   for test_phrase in ['TEST', 'UNKNOWN', 'PLACEHOLDER'])
+            not any(pattern in (lead.get('practice_name', '') or '').upper() for pattern in fake_patterns) and
+            not any(pattern in (lead.get('owner_name', '') or '').upper() for pattern in fake_patterns) and
+            lead.get('practice_name') and  # Must have a practice name
+            lead.get('practice_name').strip() != ''  # Practice name can't be empty
         ]
         
         # Sort by score (highest first)
@@ -527,9 +536,35 @@ def create_lead(lead_data):
         print(f"[ERROR] Error creating lead: {e}")
         return None
 
-def update_lead(lead_id, update_data, current_user=None):
-    """Update lead in DynamoDB with commission tracking"""
+def prevent_sold_lead_reassignment(lead_id, update_data):
+    """Prevent sold/disposed leads from being reassigned to different agents"""
     try:
+        response = leads_table.get_item(Key={'id': int(lead_id)})
+        existing_lead = response.get('Item', {})
+        
+        # If lead is already sold/disposed, protect the assignment
+        if existing_lead.get('status') in ['CLOSED_WON', 'CLOSED_LOST', 'disposed', 'sold']:
+            # Don't allow changing the assigned agent for sold leads
+            if 'assigned_user_id' in update_data:
+                original_agent = existing_lead.get('assigned_user_id')
+                new_agent = update_data.get('assigned_user_id')
+                
+                if original_agent != new_agent:
+                    print(f"🛡️ PROTECTION: Preventing reassignment of sold lead {lead_id} from agent {original_agent} to {new_agent}")
+                    # Remove the assignment change from update
+                    del update_data['assigned_user_id']
+        
+        return update_data
+        
+    except Exception as e:
+        print(f"Warning: Could not check lead protection for {lead_id}: {e}")
+        return update_data
+
+def update_lead(lead_id, update_data, current_user=None):
+    """Update lead in DynamoDB with commission tracking and lead protection"""
+    try:
+        # Protect sold leads from reassignment
+        update_data = prevent_sold_lead_reassignment(lead_id, update_data)
         # Check if this is a new sale for commission tracking
         # Auto-convert to sale if docs were sent and lead is being disposed
         try:
