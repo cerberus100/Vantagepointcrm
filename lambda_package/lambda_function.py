@@ -144,39 +144,6 @@ def initialize_default_users():
             "is_active": True,
             "created_at": "2025-01-01T00:00:00Z",
             "manager_id": None
-        },
-        {
-            "id": 2,
-            "username": "manager1", 
-            "password": "admin123",
-            "role": "manager",
-            "email": "manager1@vantagepoint.com",
-            "full_name": "Sales Manager",
-            "is_active": True,
-            "created_at": "2025-01-01T00:00:00Z",
-            "manager_id": None
-        },
-        {
-            "id": 3,
-            "username": "agent1",
-            "password": "admin123", 
-            "role": "agent",
-            "email": "agent1@vantagepoint.com",
-            "full_name": "Sales Agent",
-            "is_active": True,
-            "created_at": "2025-01-01T00:00:00Z",
-            "manager_id": 2
-        },
-        {
-            "id": 26,
-            "username": "testagent1",
-            "password": "admin123",
-            "role": "agent", 
-            "email": "testagent1@vantagepoint.com",
-            "full_name": "Test Agent 1",
-            "is_active": True,
-            "created_at": "2025-01-01T00:00:00Z",
-            "manager_id": 2
         }
     ]
     
@@ -815,15 +782,30 @@ def lambda_handler(event, context):
             else:
                 leads = all_leads
             
+            # Filter out inactive duplicates for stats
+            active_leads_list = [l for l in leads if l.get('status') != 'inactive_duplicate']
+            
             # Calculate summary stats
-            total_leads = len(leads)
-            new_leads = len([l for l in leads if l.get('status') == 'new'])
-            contacted_leads = len([l for l in leads if l.get('status') == 'contacted'])
+            total_leads = len(active_leads_list)
+            new_leads = len([l for l in active_leads_list if l.get('status') == 'new'])
+            contacted_leads = len([l for l in active_leads_list if l.get('status') == 'contacted'])
+            qualified_leads = len([l for l in active_leads_list if l.get('status') == 'qualified'])
+            signed_up_leads = len([l for l in active_leads_list if l.get('status') in ['closed_won', 'signed_up']])
+            
+            # Calculate active leads (new + contacted + qualified)
+            active_leads = new_leads + contacted_leads + qualified_leads
+            
+            # Calculate conversion rate
+            conversion_rate = round((signed_up_leads / total_leads * 100) if total_leads > 0 else 0, 1)
             
             return create_response(200, {
                 "total_leads": total_leads,
                 "new_leads": new_leads,
                 "contacted_leads": contacted_leads,
+                "qualified_leads": qualified_leads,
+                "practices_signed_up": signed_up_leads,
+                "active_leads": active_leads,
+                "conversion_rate": conversion_rate,
                 "user_role": user_role,
                 "optimized": True
             })

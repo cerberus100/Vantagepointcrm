@@ -10,7 +10,6 @@ frontend:
         - mkdir -p dist
         - cp aws_deploy/index.html dist/
         - cp aws_deploy/login.html dist/
-        - cp login.html dist/
         - cp web/styles.css dist/
         - cp manifest.json dist/
   artifacts:
