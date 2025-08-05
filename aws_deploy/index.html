@@ -1842,6 +1842,191 @@
                     orgSection.style.display = 'block';
                     loadOrganizationStructure();
                 }
+                
+                // Also show manager sales section
+                const salesSection = document.getElementById('managerSalesSection');
+                if (salesSection) {
+                    salesSection.style.display = 'block';
+                    loadManagerSales();
+                }
+            }
+        }
+        
+        // Load Manager Sales Data
+        async function loadManagerSales() {
+            console.log('📊 Loading manager sales data...');
+            
+            const container = document.getElementById('managerSalesContainer');
+            
+            try {
+                // Show loading state
+                container.innerHTML = `
+                    <div style="text-align: center; color: #666; padding: 40px;">
+                        <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 10px;"></i>
+                        <div>Loading manager sales data...</div>
+                    </div>
+                `;
+                
+                const token = localStorage.getItem('token');
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/v1/admin/analytics`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to load analytics: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('📊 Analytics data loaded:', data);
+                
+                renderManagerSales(data.analytics);
+                
+            } catch (error) {
+                console.error('❌ Failed to load manager sales:', error);
+                container.innerHTML = `
+                    <div style="text-align: center; color: #e74c3c; padding: 40px;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
+                        <div>Failed to load manager sales data</div>
+                        <div style="font-size: 0.875rem; margin-top: 10px;">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+        
+        // Render Manager Sales Data
+        function renderManagerSales(analytics) {
+            const container = document.getElementById('managerSalesContainer');
+            
+            if (!analytics || !analytics.manager_sales) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No manager sales data available</div>';
+                return;
+            }
+            
+            const managerSales = analytics.manager_sales;
+            
+            let html = `
+                <div style="margin-bottom: 20px;">
+                    <h3 style="margin: 0 0 10px 0; color: #2c3e50;">
+                        <i class="fas fa-trophy"></i> Manager Leaderboard
+                    </h3>
+                    <p style="color: #666; margin: 0;">Track sales performance across all management teams</p>
+                </div>
+            `;
+            
+            if (managerSales.length === 0) {
+                html += '<div style="text-align: center; color: #666; padding: 40px;">No managers found in the system</div>';
+            } else {
+                // Create leaderboard table
+                html += `
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                <th style="padding: 12px; text-align: left;">Rank</th>
+                                <th style="padding: 12px; text-align: left;">Manager</th>
+                                <th style="padding: 12px; text-align: center;">Team Size</th>
+                                <th style="padding: 12px; text-align: center;">Total Leads</th>
+                                <th style="padding: 12px; text-align: center;">Closed Won</th>
+                                <th style="padding: 12px; text-align: center;">Conversion %</th>
+                                <th style="padding: 12px; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                managerSales.forEach((manager, index) => {
+                    const rank = index + 1;
+                    const rankIcon = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
+                    
+                    html += `
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 12px; font-weight: 600;">${rankIcon}</td>
+                            <td style="padding: 12px;">
+                                <div style="font-weight: 600;">${manager.manager_name}</div>
+                                <div style="font-size: 0.875rem; color: #666;">@${manager.manager_username}</div>
+                            </td>
+                            <td style="padding: 12px; text-align: center;">${manager.team_size}</td>
+                            <td style="padding: 12px; text-align: center;">${manager.total_leads}</td>
+                            <td style="padding: 12px; text-align: center; font-weight: 600; color: #27ae60;">${manager.closed_won}</td>
+                            <td style="padding: 12px; text-align: center;">
+                                <span style="background: ${manager.conversion_rate > 20 ? '#27ae60' : manager.conversion_rate > 10 ? '#f39c12' : '#e74c3c'}; 
+                                            color: white; padding: 4px 8px; border-radius: 4px; font-weight: 600;">
+                                    ${manager.conversion_rate}%
+                                </span>
+                            </td>
+                            <td style="padding: 12px; text-align: center;">
+                                <button onclick="toggleManagerDetails('manager-details-${manager.manager_id}')" 
+                                        style="background: #3498db; color: white; border: none; padding: 6px 12px; 
+                                               border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+                                    <i class="fas fa-eye"></i> Details
+                                </button>
+                            </td>
+                        </tr>
+                        <tr id="manager-details-${manager.manager_id}" style="display: none; background: #f8f9fa;">
+                            <td colspan="7" style="padding: 20px;">
+                                <h4 style="margin: 0 0 15px 0;">Team Members</h4>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
+                                    ${manager.agents.map(agent => `
+                                        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
+                                            <div style="font-weight: 600; margin-bottom: 5px;">${agent.full_name}</div>
+                                            <div style="font-size: 0.875rem; color: #666;">@${agent.username}</div>
+                                            <div style="margin-top: 10px; display: flex; justify-content: space-between;">
+                                                <span>Leads: ${agent.leads_assigned}</span>
+                                                <span style="color: #27ae60; font-weight: 600;">Closed: ${agent.closed_won}</span>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                        </tbody>
+                    </table>
+                `;
+                
+                // Add summary stats
+                const totalSales = managerSales.reduce((sum, m) => sum + m.closed_won, 0);
+                const totalLeads = managerSales.reduce((sum, m) => sum + m.total_leads, 0);
+                const avgConversion = totalLeads > 0 ? ((totalSales / totalLeads) * 100).toFixed(1) : 0;
+                
+                html += `
+                    <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                        <h4 style="margin: 0 0 15px 0;">Company-Wide Stats</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                            <div>
+                                <div style="font-size: 0.875rem; color: #666;">Total Managers</div>
+                                <div style="font-size: 1.5rem; font-weight: 600;">${managerSales.length}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.875rem; color: #666;">Total Sales</div>
+                                <div style="font-size: 1.5rem; font-weight: 600; color: #27ae60;">${totalSales}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.875rem; color: #666;">Total Leads</div>
+                                <div style="font-size: 1.5rem; font-weight: 600;">${totalLeads}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.875rem; color: #666;">Avg Conversion</div>
+                                <div style="font-size: 1.5rem; font-weight: 600;">${avgConversion}%</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // Toggle manager details visibility
+        function toggleManagerDetails(detailsId) {
+            const detailsRow = document.getElementById(detailsId);
+            if (detailsRow) {
+                detailsRow.style.display = detailsRow.style.display === 'none' ? 'table-row' : 'none';
             }
         }
     });
@@ -1943,6 +2128,27 @@
                 <div style="text-align: center; color: #666; padding: 40px;">
                     <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 10px;"></i>
                     <div>Loading organizational structure...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Manager Sales Tracking (Admin Only) -->
+        <section id="managerSalesSection" class="section" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <i class="fas fa-chart-line"></i>
+                    Manager Sales Performance
+                </h2>
+                <div class="action-buttons">
+                    <button class="btn-primary" onclick="loadManagerSales()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div id="managerSalesContainer" style="background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 20px;">
+                <div style="text-align: center; color: #666; padding: 40px;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 10px;"></i>
+                    <div>Loading manager sales data...</div>
                 </div>
             </div>
         </section>

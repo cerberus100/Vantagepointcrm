@@ -308,6 +308,47 @@ def get_next_lead_id():
         print(f"Error getting next lead ID: {e}")
         return random.randint(1000, 9999)
 
+
+def get_manager_sales_stats():
+    """Get sales statistics for each manager and their team"""
+    all_users = get_all_users()
+    all_leads = get_all_leads()
+    
+    managers = [u for u in all_users if u.get('role') == 'manager']
+    manager_stats = []
+    
+    for manager in managers:
+        # Get all agents under this manager
+        team_agents = [u for u in all_users if u.get('manager_id') == manager['id']]
+        team_ids = [agent['id'] for agent in team_agents] + [manager['id']]
+        
+        # Get all leads assigned to this team
+        team_leads = [l for l in all_leads if l.get('assigned_user_id') in team_ids]
+        
+        # Calculate stats
+        total_leads = len(team_leads)
+        closed_won = len([l for l in team_leads if l.get('status') == 'closed_won'])
+        conversion_rate = round((closed_won / total_leads * 100) if total_leads > 0 else 0, 1)
+        
+        manager_stats.append({
+            "manager_id": manager['id'],
+            "manager_name": manager.get('full_name', manager['username']),
+            "manager_username": manager['username'],
+            "team_size": len(team_agents),
+            "total_leads": total_leads,
+            "closed_won": closed_won,
+            "conversion_rate": conversion_rate,
+            "agents": [{
+                "id": agent['id'],
+                "username": agent['username'],
+                "full_name": agent.get('full_name', agent['username']),
+                "leads_assigned": len([l for l in team_leads if l.get('assigned_user_id') == agent['id']]),
+                "closed_won": len([l for l in team_leads if l.get('assigned_user_id') == agent['id'] and l.get('status') == 'closed_won'])
+            } for agent in team_agents]
+        })
+    
+    return sorted(manager_stats, key=lambda x: x['closed_won'], reverse=True)
+
 def get_all_leads():
     """Get all leads from DynamoDB"""
     try:
@@ -702,8 +743,14 @@ def lambda_handler(event, context):
                 # Agents see only their assigned leads
                 filtered_leads = [lead for lead in all_leads if lead.get('assigned_user_id') == user_id]
             elif user_role == 'manager':
-                # Managers see all leads (team hierarchy not implemented yet)
-                filtered_leads = all_leads
+                # Managers see only their team's leads
+                # First get all agents under this manager
+                manager_agents = [u for u in get_all_users() if u.get('manager_id') == user_id]
+                agent_ids = [agent['id'] for agent in manager_agents]
+                # Include the manager's own ID as well
+                team_ids = agent_ids + [user_id]
+                # Filter leads to only those assigned to the team
+                filtered_leads = [lead for lead in all_leads if lead.get('assigned_user_id') in team_ids]
             elif user_role == 'admin':
                 # Admins see all leads
                 filtered_leads = all_leads
@@ -779,6 +826,12 @@ def lambda_handler(event, context):
             
             if user_role == 'agent':
                 leads = [lead for lead in all_leads if lead.get('assigned_user_id') == user_id]
+            elif user_role == 'manager':
+                # Managers see only their team's summary
+                manager_agents = [u for u in get_all_users() if u.get('manager_id') == user_id]
+                agent_ids = [agent['id'] for agent in manager_agents]
+                team_ids = agent_ids + [user_id]
+                leads = [lead for lead in all_leads if lead.get('assigned_user_id') in team_ids]
             else:
                 leads = all_leads
             
