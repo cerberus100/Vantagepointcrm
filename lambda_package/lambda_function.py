@@ -401,9 +401,25 @@ def create_lead(lead_data):
         print(f"[ERROR] Error creating lead: {e}")
         return None
 
-def update_lead(lead_id, update_data):
-    """Update lead in DynamoDB"""
+def update_lead(lead_id, update_data, current_user=None):
+    """Update lead in DynamoDB with commission tracking"""
     try:
+        # Check if this is a new sale for commission tracking
+        if update_data.get('status') == 'CLOSED_WON' and current_user:
+            # Get the current lead to check if this is a new sale
+            try:
+                response = leads_table.get_item(Key={'id': int(lead_id)})
+                old_lead = response.get('Item', {})
+                
+                if old_lead.get('status') != 'CLOSED_WON':
+                    # This is a new sale! Track it for commission
+                    update_data['closed_by_user_id'] = current_user.get('id')
+                    update_data['closed_by_username'] = current_user.get('username')
+                    update_data['closed_at'] = datetime.utcnow().isoformat()
+                    logger.info(f"💰 New sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
+            except Exception as e:
+                logger.warning(f"Could not check previous lead status for commission tracking: {e}")
+        
         # Build update expression
         update_expr = "SET "
         expr_values = {}
@@ -431,7 +447,7 @@ def update_lead(lead_id, update_data):
         
         return True
     except Exception as e:
-        print(f"Error updating lead: {e}")
+        logger.error(f"Error updating lead: {e}")
         return False
 
 # MASTER ADMIN ANALYTICS - NEW FUNCTIONALITY
@@ -821,7 +837,7 @@ def lambda_handler(event, context):
                 lead_id = path.split('/')[-1]
                 update_data = body_data
                 
-                if update_lead(lead_id, update_data):
+                if update_lead(lead_id, update_data, current_user):
                     updated_lead = get_lead_by_id(lead_id)
                     return create_response(200, updated_lead)
                 else:
