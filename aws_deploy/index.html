@@ -1294,6 +1294,9 @@
                 
                 // Show commission reports for admins and managers
                 showCommissionReportsForAuthorized();
+                
+                // Show admin navigation buttons
+                showAdminButtons();
             } else if (currentUser.role === 'manager') {
                 console.log('👨‍💼 Manager role detected - showing Create Agent button');
                 createUserBtn.style.display = 'none';
@@ -1302,6 +1305,10 @@
                 
                 // Show commission reports for managers too
                 showCommissionReportsForAuthorized();
+                
+                // Show commission reports button for managers
+                const commissionBtn = document.getElementById('commissionReportsBtn');
+                if (commissionBtn) commissionBtn.style.display = 'inline-block';
             } else {
                 console.log('👤 Agent/other role detected - hiding all management buttons');
                 createUserBtn.style.display = 'none';
@@ -2045,6 +2052,60 @@
             }
         }
         
+        // Show commission reports section
+        function showCommissionReports() {
+            const section = document.getElementById('commissionReportSection');
+            if (section) {
+                section.style.display = 'block';
+                section.scrollIntoView({ behavior: 'smooth' });
+                
+                // Set default dates if not set
+                const startDate = document.getElementById('commissionStartDate');
+                const endDate = document.getElementById('commissionEndDate');
+                
+                if (!startDate.value) {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setDate(start.getDate() - 30);
+                    
+                    startDate.value = start.toISOString().split('T')[0];
+                    endDate.value = end.toISOString().split('T')[0];
+                }
+                
+                loadCommissionReport();
+            }
+        }
+        
+        // Show manager sales section  
+        function showManagerSales() {
+            const section = document.getElementById('managerSalesSection');
+            if (section) {
+                section.style.display = 'block';
+                section.scrollIntoView({ behavior: 'smooth' });
+                loadManagerSales();
+            }
+        }
+        
+        // Show admin buttons based on role
+        function showAdminButtons() {
+            if (currentUser && currentUser.role === 'admin') {
+                const commissionBtn = document.getElementById('commissionReportsBtn');
+                const managerBtn = document.getElementById('managerSalesBtn');
+                
+                if (commissionBtn) commissionBtn.style.display = 'inline-block';
+                if (managerBtn) managerBtn.style.display = 'inline-block';
+                
+                // Also show the user filter for admin commission reports
+                const userFilter = document.getElementById('commissionUserFilter');
+                if (userFilter) {
+                    userFilter.style.display = 'inline-block';
+                    loadUsersForCommissionFilter();
+                }
+                
+                console.log('✅ Admin buttons and filters displayed');
+            }
+        }
+        
         // Show commission reports for admins and managers
         function showCommissionReportsForAuthorized() {
             if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) {
@@ -2535,6 +2596,12 @@
                         </button>
                         <button class="btn-primary" onclick="refreshLeads()">
                             <i class="fas fa-refresh"></i> Refresh
+                        </button>
+                        <button class="btn-primary" onclick="showCommissionReports()" id="commissionReportsBtn" style="display: none;">
+                            <i class="fas fa-chart-line"></i> Commission Reports
+                        </button>
+                        <button class="btn-primary" onclick="showManagerSales()" id="managerSalesBtn" style="display: none;">
+                            <i class="fas fa-trophy"></i> Manager Performance
                         </button>
                     </div>
             </div>
