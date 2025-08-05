@@ -26,6 +26,83 @@ dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 users_table = dynamodb.Table('vantagepoint-users')
 leads_table = dynamodb.Table('vantagepoint-leads')
 
+
+def send_docs_to_external_api(lead_data, user_info):
+    """Send documents to external API using real vendor token"""
+    try:
+        import requests
+        import os
+        
+        # Get the real vendor token from environment
+        vendor_token = os.environ.get('VENDOR_TOKEN', '')
+        if not vendor_token:
+            logger.error("VENDOR_TOKEN not found in environment variables")
+            return {"success": False, "error": "Vendor token not configured"}
+        
+        # Prepare the data for external API
+        api_data = {
+            "practiceInfo": {
+                "practiceName": lead_data.get('practice_name', ''),
+                "ownerName": lead_data.get('owner_name', ''),
+                "contactEmail": lead_data.get('email', ''),
+                "phoneNumber": lead_data.get('practice_phone', ''),
+                "address": lead_data.get('address', ''),
+                "city": lead_data.get('city', ''),
+                "state": lead_data.get('state', ''),
+                "zipCode": lead_data.get('zip_code', ''),
+                "specialties": [lead_data.get('specialty', 'General Practice')],
+                "facilityType": lead_data.get('facility_type', 'Physician Office (11)'),
+                "ptan": lead_data.get('ptan', ''),
+                "npi": lead_data.get('npi', ''),
+                "einTin": lead_data.get('ein_tin', ''),
+                "baaSignedStatus": lead_data.get('baa_signed', True),
+                "paSignedStatus": lead_data.get('pa_signed', True)
+            },
+            "requestId": f"vantagepoint-{lead_data.get('id', 'unknown')}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "salesRep": user_info.get('full_name', user_info.get('username', 'VantagePoint Sales Team')),
+            "source": "VantagePoint CRM"
+        }
+        
+        # External API endpoint
+        external_api_url = os.environ.get('EXTERNAL_API_URL', 'https://nwabj0qrf1.execute-api.us-east-1.amazonaws.com/Prod/createUserExternal')
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {vendor_token}',
+            'X-API-Key': vendor_token  # Some APIs expect the token in this header
+        }
+        
+        logger.info(f"📡 Sending docs to external API for lead {lead_data.get('id')}")
+        
+        response = requests.post(
+            external_api_url,
+            json=api_data,
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            logger.info(f"✅ External API success for lead {lead_data.get('id')}")
+            return {
+                "success": True,
+                "external_response": response.json(),
+                "status_code": response.status_code
+            }
+        else:
+            logger.error(f"❌ External API failed: {response.status_code} - {response.text}")
+            return {
+                "success": False,
+                "error": f"External API error: {response.status_code}",
+                "details": response.text
+            }
+            
+    except Exception as e:
+        logger.error(f"Exception in send_docs_to_external_api: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Failed to send docs: {str(e)}"
+        }
+
 # Helper function to handle DynamoDB Decimal types in JSON
 def decimal_default(obj):
     if isinstance(obj, Decimal):
@@ -405,20 +482,35 @@ def update_lead(lead_id, update_data, current_user=None):
     """Update lead in DynamoDB with commission tracking"""
     try:
         # Check if this is a new sale for commission tracking
-        if update_data.get('status') == 'CLOSED_WON' and current_user:
-            # Get the current lead to check if this is a new sale
-            try:
-                response = leads_table.get_item(Key={'id': int(lead_id)})
-                old_lead = response.get('Item', {})
+        # Auto-convert to sale if docs were sent and lead is being disposed
+        try:
+            response = leads_table.get_item(Key={'id': int(lead_id)})
+            old_lead = response.get('Item', {})
+            
+            # Auto-sale logic: if docs sent and status is disposed/closed_lost, convert to sale
+            if (update_data.get('status') in ['disposed', 'CLOSED_LOST'] and 
+                old_lead.get('docs_sent') and 
+                old_lead.get('status') != 'CLOSED_WON'):
                 
-                if old_lead.get('status') != 'CLOSED_WON':
-                    # This is a new sale! Track it for commission
-                    update_data['closed_by_user_id'] = current_user.get('id')
-                    update_data['closed_by_username'] = current_user.get('username')
-                    update_data['closed_at'] = datetime.utcnow().isoformat()
-                    logger.info(f"💰 New sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
-            except Exception as e:
-                logger.warning(f"Could not check previous lead status for commission tracking: {e}")
+                # Automatically convert to sale!
+                update_data['status'] = 'CLOSED_WON'
+                update_data['closed_by_user_id'] = current_user.get('id') if current_user else old_lead.get('docs_sent_by_id')
+                update_data['closed_by_username'] = current_user.get('username') if current_user else old_lead.get('docs_sent_by')
+                update_data['closed_at'] = datetime.utcnow().isoformat()
+                update_data['auto_converted'] = True
+                update_data['conversion_reason'] = 'docs_sent_and_disposed'
+                logger.info(f"🎉 AUTO SALE: Lead {lead_id} converted to sale (docs sent + disposed)")
+                
+            # Manual sale tracking
+            elif update_data.get('status') == 'CLOSED_WON' and current_user and old_lead.get('status') != 'CLOSED_WON':
+                # This is a manual sale! Track it for commission
+                update_data['closed_by_user_id'] = current_user.get('id')
+                update_data['closed_by_username'] = current_user.get('username')
+                update_data['closed_at'] = datetime.utcnow().isoformat()
+                logger.info(f"💰 Manual sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
+                
+        except Exception as e:
+            logger.warning(f"Could not check previous lead status for commission tracking: {e}")
         
         # Build update expression
         update_expr = "SET "
@@ -967,6 +1059,56 @@ def lambda_handler(event, context):
             })
         
         
+        
+        # Send docs endpoint - POST /api/v1/leads/{id}/send-docs
+        if path.startswith('/api/v1/leads/') and path.endswith('/send-docs') and method == 'POST':
+            lead_id = int(path.split('/')[-2])
+            lead = get_lead_by_id(lead_id)
+            
+            if not lead:
+                return create_response(404, {"detail": "Lead not found"})
+            
+            # Check if lead has required data
+            if not lead.get('email'):
+                return create_response(400, {"detail": "Lead must have email before sending docs"})
+            
+            # Check if docs already sent
+            if lead.get('docs_sent'):
+                return create_response(400, {"detail": "Documents already sent to this lead"})
+            
+            # Check permissions - agents can only send docs for their own leads
+            if current_user['role'] == 'agent' and lead.get("assigned_user_id") != current_user['id']:
+                return create_response(403, {"detail": "You can only send docs for your own leads"})
+            
+            # Send to external API
+            external_result = send_docs_to_external_api(lead, current_user)
+            
+            if external_result['success']:
+                # Mark docs as sent and update lead
+                update_data = {
+                    'docs_sent': True,
+                    'docs_sent_at': datetime.utcnow().isoformat(),
+                    'docs_sent_by': current_user.get('username'),
+                    'status': 'CONTACTED'  # Update status to show progress
+                }
+                
+                if update_lead(lead_id, update_data, current_user):
+                    logger.info(f"📤 Docs sent successfully for lead {lead_id}")
+                    return create_response(200, {
+                        "message": "Documents sent successfully",
+                        "external_response": external_result.get('external_response'),
+                        "lead_updated": True
+                    })
+                else:
+                    return create_response(500, {"detail": "Failed to update lead after sending docs"})
+            else:
+                logger.error(f"Failed to send docs for lead {lead_id}: {external_result.get('error')}")
+                return create_response(500, {
+                    "detail": "Failed to send documents",
+                    "error": external_result.get('error'),
+                    "details": external_result.get('details')
+                })
+
         # GET /api/v1/reports/commission - Commission/Sales Report
         if path == '/api/v1/reports/commission' and method == 'GET':
             # Check authorization
@@ -1017,13 +1159,15 @@ def lambda_handler(event, context):
                     "closed_by_user_id": lead.get('closed_by_user_id'),
                     "closed_by_username": lead.get('closed_by_username', 'Unknown'),
                     "closed_at": lead.get('closed_at'),
-                    "sale_amount": lead.get('sale_amount', 0),
+                    "docs_sent": lead.get('docs_sent', False),
+                    "docs_sent_at": lead.get('docs_sent_at'),
+                    "auto_converted": lead.get('auto_converted', False),
+                    "conversion_reason": lead.get('conversion_reason', 'manual'),
                     "lead_score": lead.get('score'),
                     "lead_priority": lead.get('priority'),
                     "days_to_close": calculate_days_to_close(lead.get('created_at'), lead.get('closed_at'))
                 }
                 sales_records.append(record)
-                total_sales += record['sale_amount']
             
             # Sort by closed date (newest first)
             sales_records.sort(key=lambda x: x['closed_at'], reverse=True)
@@ -1031,8 +1175,8 @@ def lambda_handler(event, context):
             # Calculate summary statistics
             summary = {
                 "total_sales": len(sales_records),
-                "total_amount": total_sales,
-                "average_amount": round(total_sales / len(sales_records), 2) if sales_records else 0,
+                "auto_sales": len([r for r in sales_records if r.get('auto_converted')]),
+                "manual_sales": len([r for r in sales_records if not r.get('auto_converted')]),
                 "date_range": {
                     "start": start_date or (min([s['closed_at'] for s in sales_records]) if sales_records else None),
                     "end": end_date or (max([s['closed_at'] for s in sales_records]) if sales_records else None)
@@ -1051,7 +1195,8 @@ def lambda_handler(event, context):
                         "total_amount": 0
                     }
                 user_summary[user_key]['total_sales'] += 1
-                user_summary[user_key]['total_amount'] += record['sale_amount']
+                # Count sales instead of amounts
+                pass  # No monetary amount to add
             
             return create_response(200, {
                 "success": True,

@@ -1035,32 +1035,16 @@
             document.getElementById('editPtan').value = lead.ptan || '';
             document.getElementById('editEinTin').value = lead.ein_tin || '';
             
-            // Set sale amount if it exists
-            if (lead.sale_amount !== undefined && lead.sale_amount !== null) {
-                document.getElementById('editSaleAmount').value = lead.sale_amount;
-            } else {
-                document.getElementById('editSaleAmount').value = '';
-            }
+
 
             // Show modal
             const modal = new bootstrap.Modal(document.getElementById('editLeadModal'));
             modal.show();
             
-            // Show/hide sale amount field based on status
-            toggleSaleAmount();
+
         }
         
-        function toggleSaleAmount() {
-            const status = document.getElementById('editStatus').value;
-            const saleAmountRow = document.getElementById('saleAmountRow');
-            
-            if (status === 'CLOSED_WON') {
-                saleAmountRow.style.display = 'block';
-            } else {
-                saleAmountRow.style.display = 'none';
-                document.getElementById('editSaleAmount').value = '';
-            }
-        }
+
 
         async function saveLeadChanges() {
             const leadId = document.getElementById('editLeadId').value;
@@ -1082,11 +1066,7 @@
                 ein_tin: document.getElementById('editEinTin').value
             };
             
-            // Include sale amount if status is CLOSED_WON
-            if (status === 'CLOSED_WON') {
-                const saleAmount = document.getElementById('editSaleAmount').value;
-                updatedLead.sale_amount = parseFloat(saleAmount) || 0;
-            }
+
 
             try {
                 const token = localStorage.getItem('token');
@@ -2196,12 +2176,14 @@
                         <div style="font-size: 2rem; font-weight: 600; color: #2c3e50;">${data.summary.total_sales}</div>
                     </div>
                     <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 0.875rem; color: #666;">Total Revenue</div>
-                        <div style="font-size: 2rem; font-weight: 600; color: #27ae60;">$${data.summary.total_amount.toLocaleString()}</div>
+                        <div style="font-size: 0.875rem; color: #666;">Auto Sales</div>
+                        <div style="font-size: 2rem; font-weight: 600; color: #27ae60;">${data.summary.auto_sales || 0}</div>
+                        <div style="font-size: 0.75rem; color: #666;">Docs Sent + Disposed</div>
                     </div>
                     <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 0.875rem; color: #666;">Average Sale</div>
-                        <div style="font-size: 2rem; font-weight: 600; color: #3498db;">$${data.summary.average_amount.toLocaleString()}</div>
+                        <div style="font-size: 0.875rem; color: #666;">Manual Sales</div>
+                        <div style="font-size: 2rem; font-weight: 600; color: #3498db;">${data.summary.manual_sales || 0}</div>
+                        <div style="font-size: 0.75rem; color: #666;">Manually Closed</div>
                     </div>
                 </div>
                 
@@ -2217,8 +2199,8 @@
                     <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
                         <div style="font-weight: 600; margin-bottom: 10px;">${user.username}</div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Sales: ${user.total_sales}</span>
-                            <span style="color: #27ae60; font-weight: 600;">$${user.total_amount.toLocaleString()}</span>
+                            <span>Total Sales: ${user.total_sales}</span>
+                            <span style="color: #27ae60; font-weight: 600;">🎯 ${user.total_sales} Closes</span>
                         </div>
                     </div>
                 `;
@@ -2232,14 +2214,15 @@
                 <div>
                     <h3 style="margin: 0 0 15px 0; color: #2c3e50;">Detailed Sales Records</h3>
                     <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; min-width: 800px;">
+                        <table style="width: 100%; border-collapse: collapse; min-width: 900px;">
                             <thead>
                                 <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
                                     <th style="padding: 12px; text-align: left;">Date</th>
                                     <th style="padding: 12px; text-align: left;">Sales Rep</th>
                                     <th style="padding: 12px; text-align: left;">Practice</th>
                                     <th style="padding: 12px; text-align: left;">Location</th>
-                                    <th style="padding: 12px; text-align: right;">Amount</th>
+                                    <th style="padding: 12px; text-align: center;">Sale Type</th>
+                                    <th style="padding: 12px; text-align: center;">Docs Sent</th>
                                     <th style="padding: 12px; text-align: center;">Days to Close</th>
                                     <th style="padding: 12px; text-align: center;">Lead Score</th>
                                 </tr>
@@ -2251,13 +2234,15 @@
             if (data.sales_records.length === 0) {
                 html += `
                     <tr>
-                        <td colspan="7" style="padding: 40px; text-align: center; color: #666;">No sales found for the selected period</td>
+                        <td colspan="8" style="padding: 40px; text-align: center; color: #666;">No sales found for the selected period</td>
                     </tr>
                 `;
             } else {
                 data.sales_records.forEach(record => {
                     const closedDate = new Date(record.closed_at).toLocaleDateString();
-                    const amount = record.sale_amount || 0;
+                    const isAutoSale = record.auto_converted || false;
+                    const docsSent = record.docs_sent ? '✅' : '❌';
+                    const docsSentDate = record.docs_sent_at ? new Date(record.docs_sent_at).toLocaleDateString() : 'N/A';
                     
                     html += `
                         <tr style="border-bottom: 1px solid #dee2e6;">
@@ -2271,7 +2256,16 @@
                                 <div style="font-size: 0.875rem; color: #666;">${record.owner_name}</div>
                             </td>
                             <td style="padding: 12px;">${record.city}, ${record.state}</td>
-                            <td style="padding: 12px; text-align: right; font-weight: 600; color: #27ae60;">$${amount.toLocaleString()}</td>
+                            <td style="padding: 12px; text-align: center;">
+                                <span style="background: ${isAutoSale ? '#27ae60' : '#3498db'}; 
+                                            color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.875rem;">
+                                    ${isAutoSale ? '🤖 Auto' : '👤 Manual'}
+                                </span>
+                            </td>
+                            <td style="padding: 12px; text-align: center;">
+                                <div>${docsSent}</div>
+                                <div style="font-size: 0.75rem; color: #666;">${docsSentDate}</div>
+                            </td>
                             <td style="padding: 12px; text-align: center;">${record.days_to_close} days</td>
                             <td style="padding: 12px; text-align: center;">
                                 <span style="background: ${record.lead_priority === 'A+' ? '#e74c3c' : record.lead_priority === 'A' ? '#f39c12' : '#3498db'}; 
@@ -2304,7 +2298,7 @@
             const data = window.lastCommissionReport;
             
             // Create CSV header
-            let csv = 'Date,Sales Rep,User ID,Practice Name,Owner,City,State,Amount,Days to Close,Lead Score,Lead Priority\\n';
+            let csv = 'Date,Sales Rep,User ID,Practice Name,Owner,City,State,Sale Type,Docs Sent,Docs Sent Date,Days to Close,Lead Score,Lead Priority\\n';
             
             // Add data rows
             data.sales_records.forEach(record => {
@@ -2316,7 +2310,9 @@
                     `"${record.owner_name.replace(/"/g, '""')}"`,
                     record.city,
                     record.state,
-                    record.sale_amount || 0,
+                    record.auto_converted ? 'Auto (Docs+Dispose)' : 'Manual',
+                    record.docs_sent ? 'Yes' : 'No',
+                    record.docs_sent_at ? new Date(record.docs_sent_at).toLocaleDateString() : 'N/A',
                     record.days_to_close,
                     record.lead_score,
                     record.lead_priority
@@ -2327,8 +2323,8 @@
             // Add summary section
             csv += '\\n\\nSUMMARY\\n';
             csv += `Total Sales,${data.summary.total_sales}\\n`;
-            csv += `Total Revenue,$${data.summary.total_amount}\\n`;
-            csv += `Average Sale,$${data.summary.average_amount}\\n`;
+            csv += `Auto Sales (Docs+Dispose),${data.summary.auto_sales || 0}\\n`;
+            csv += `Manual Sales,${data.summary.manual_sales || 0}\\n`;
             
             // Create download
             const blob = new Blob([csv], { type: 'text/csv' });
@@ -2736,7 +2732,7 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Status</label>
-                                <select id="editStatus" class="form-control" onchange="toggleSaleAmount()">
+                                <select id="editStatus" class="form-control">
                                     <option value="NEW">New</option>
                                     <option value="CONTACTED">Contacted</option>
                                     <option value="QUALIFIED">Qualified</option>
@@ -2745,16 +2741,7 @@
                                 </select>
                             </div>
                         </div>
-                        <div class="row mt-3" id="saleAmountRow" style="display: none;">
-                            <div class="col-md-6">
-                                <label class="form-label">Sale Amount</label>
-                                <div class="input-group">
-                                    <span class="input-group-text">$</span>
-                                    <input type="number" id="editSaleAmount" class="form-control" step="0.01" min="0" placeholder="0.00">
-                                </div>
-                                <small class="text-muted">Enter the sale amount for commission tracking</small>
-                            </div>
-                        </div>
+
                         <div class="row mt-3">
                             <div class="col-md-6">
                                 <label class="form-label">Priority</label>
