@@ -1290,13 +1290,25 @@
                 console.log('✅ Create User button should now be visible');
                 
                 // Show organizational structure for admins
-                showOrganizationForAdmin();
+                try {
+                    showOrganizationForAdmin();
+                } catch (e) {
+                    console.warn('showOrganizationForAdmin not ready:', e);
+                }
                 
                 // Show commission reports for admins and managers
-                showCommissionReportsForAuthorized();
+                try {
+                    showCommissionReportsForAuthorized();
+                } catch (e) {
+                    console.warn('showCommissionReportsForAuthorized not ready:', e);
+                }
                 
                 // Show admin navigation buttons
-                showAdminButtons();
+                try {
+                    showAdminButtons();
+                } catch (e) {
+                    console.warn('showAdminButtons not ready:', e);
+                }
             } else if (currentUser.role === 'manager') {
                 console.log('👨‍💼 Manager role detected - showing Create Agent button');
                 createUserBtn.style.display = 'none';
@@ -1304,7 +1316,11 @@
                 console.log('✅ Create Agent button should now be visible');
                 
                 // Show commission reports for managers too
-                showCommissionReportsForAuthorized();
+                try {
+                    showCommissionReportsForAuthorized();
+                } catch (e) {
+                    console.warn('showCommissionReportsForAuthorized not ready:', e);
+                }
                 
                 // Show commission reports button for managers
                 const commissionBtn = document.getElementById('commissionReportsBtn');
