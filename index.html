@@ -2125,12 +2125,21 @@
         
         // Show admin buttons based on role
         function showAdminButtons() {
+            console.log('🔍 showAdminButtons called, currentUser:', currentUser);
             if (currentUser && currentUser.role === 'admin') {
                 const commissionBtn = document.getElementById('commissionReportsBtn');
                 const managerBtn = document.getElementById('managerSalesBtn');
                 
-                if (commissionBtn) commissionBtn.style.display = 'inline-block';
-                if (managerBtn) managerBtn.style.display = 'inline-block';
+                console.log('📊 Found buttons:', { commissionBtn, managerBtn });
+                
+                if (commissionBtn) {
+                    commissionBtn.style.display = 'inline-block';
+                    console.log('✅ Deal Tracker button shown');
+                }
+                if (managerBtn) {
+                    managerBtn.style.display = 'inline-block';
+                    console.log('✅ Manager Performance button shown');
+                }
                 
                 // Also show the user filter for admin commission reports
                 const userFilter = document.getElementById('commissionUserFilter');
@@ -2139,7 +2148,9 @@
                     loadUsersForCommissionFilter();
                 }
                 
-                console.log('✅ Admin buttons and filters displayed');
+                console.log('✅ Admin Deal Tracker and Manager buttons displayed');
+            } else {
+                console.log('❌ Not admin or no user:', currentUser?.role);
             }
         }
         
@@ -2561,12 +2572,12 @@
             </div>
         </section>
 
-        <!-- Commission Reports (Admin & Manager) -->
+        <!-- Deal Tracker (Admin & Manager) -->
         <section id="commissionReportSection" class="section" style="display: none;">
             <div class="section-header">
                 <h2 class="section-title">
-                    <i class="fas fa-file-invoice-dollar"></i>
-                    Commission Reports
+                    <i class="fas fa-bullseye"></i>
+                    Deal Tracker - Deals Getting Close
                 </h2>
                 <div class="action-buttons">
                     <input type="date" id="commissionStartDate" style="margin-right: 10px;" onchange="loadCommissionReport()">
@@ -2586,7 +2597,7 @@
             <div id="commissionReportContainer" style="background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 20px;">
                 <div style="text-align: center; color: #666; padding: 40px;">
                     <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 10px;"></i>
-                    <div>Loading commission report...</div>
+                    <div>Loading deal tracker data...</div>
                 </div>
             </div>
         </section>
@@ -2635,7 +2646,7 @@
                             <i class="fas fa-refresh"></i> Refresh
                         </button>
                         <button class="btn-primary" onclick="showCommissionReports()" id="commissionReportsBtn" style="display: none;">
-                            <i class="fas fa-chart-line"></i> Commission Reports
+                            <i class="fas fa-bullseye"></i> Deal Tracker
                         </button>
                         <button class="btn-primary" onclick="showManagerSales()" id="managerSalesBtn" style="display: none;">
                             <i class="fas fa-trophy"></i> Manager Performance
