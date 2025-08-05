@@ -1324,12 +1324,15 @@
                     console.warn('showCommissionReportsForAuthorized not ready:', e);
                 }
                 
-                // Show admin navigation buttons
+                // Show admin navigation buttons - CRITICAL FOR DEAL TRACKER
                 try {
                     showAdminButtons();
                 } catch (e) {
                     console.warn('showAdminButtons not ready:', e);
                 }
+                
+                // BACKUP: Force show Deal Tracker buttons independently 
+                forceDealTrackerButtons();
             } else if (currentUser.role === 'manager') {
                 console.log('👨‍💼 Manager role detected - showing Create Agent button');
                 createUserBtn.style.display = 'none';
@@ -1346,6 +1349,9 @@
                 // Show commission reports button for managers
                 const commissionBtn = document.getElementById('commissionReportsBtn');
                 if (commissionBtn) commissionBtn.style.display = 'inline-block';
+                
+                // BACKUP: Force show Deal Tracker button for managers too
+                forceDealTrackerButtons();
             } else {
                 console.log('👤 Agent/other role detected - hiding all management buttons');
                 createUserBtn.style.display = 'none';
@@ -2153,6 +2159,85 @@
                 console.log('❌ Not admin or no user:', currentUser?.role);
             }
         }
+        
+        // BACKUP FUNCTION: Force show Deal Tracker buttons (independent of other functions)
+        function forceDealTrackerButtons() {
+            console.log('🚀 forceDealTrackerButtons() called - ensuring Deal Tracker buttons appear');
+            
+            if (!currentUser) {
+                console.log('❌ No currentUser, cannot show Deal Tracker buttons');
+                return;
+            }
+            
+            console.log(`👤 User role: ${currentUser.role}`);
+            
+            // Force show Deal Tracker button for admin and manager
+            if (currentUser.role === 'admin' || currentUser.role === 'manager') {
+                const dealTrackerBtn = document.getElementById('commissionReportsBtn');
+                
+                if (dealTrackerBtn) {
+                    dealTrackerBtn.style.display = 'inline-block';
+                    dealTrackerBtn.style.visibility = 'visible';
+                    console.log('✅ DEAL TRACKER BUTTON FORCED TO SHOW');
+                } else {
+                    console.error('❌ commissionReportsBtn element not found in DOM!');
+                    // Try to find it by class or create it
+                    console.log('🔍 Searching for Deal Tracker button in DOM...');
+                    const allButtons = document.querySelectorAll('button');
+                    console.log(`Found ${allButtons.length} total buttons in page`);
+                }
+                
+                // For admin only, also show Manager Performance button
+                if (currentUser.role === 'admin') {
+                    const managerBtn = document.getElementById('managerSalesBtn');
+                    if (managerBtn) {
+                        managerBtn.style.display = 'inline-block';
+                        managerBtn.style.visibility = 'visible';
+                        console.log('✅ MANAGER PERFORMANCE BUTTON FORCED TO SHOW');
+                    } else {
+                        console.error('❌ managerSalesBtn element not found in DOM!');
+                    }
+                }
+            } else {
+                console.log('👤 Agent role - Deal Tracker buttons not applicable');
+            }
+        }
+        
+        // MANUAL DEBUG FUNCTION: Call this from console if buttons don't appear
+        function debugDealTrackerButtons() {
+            console.log('🔧 MANUAL DEBUG: Checking Deal Tracker button status');
+            console.log('Current user:', currentUser);
+            
+            const dealTrackerBtn = document.getElementById('commissionReportsBtn');
+            const managerBtn = document.getElementById('managerSalesBtn');
+            
+            console.log('Deal Tracker button element:', dealTrackerBtn);
+            console.log('Manager Performance button element:', managerBtn);
+            
+            if (dealTrackerBtn) {
+                console.log('Deal Tracker button current style:', {
+                    display: dealTrackerBtn.style.display,
+                    visibility: dealTrackerBtn.style.visibility,
+                    computed: window.getComputedStyle(dealTrackerBtn).display
+                });
+            }
+            
+            if (managerBtn) {
+                console.log('Manager button current style:', {
+                    display: managerBtn.style.display,
+                    visibility: managerBtn.style.visibility,
+                    computed: window.getComputedStyle(managerBtn).display
+                });
+            }
+            
+            // Force show them
+            console.log('🚀 Forcing buttons to show...');
+            forceDealTrackerButtons();
+        }
+        
+        // Make debug function available globally for console access
+        window.debugDealTrackerButtons = debugDealTrackerButtons;
+        window.forceDealTrackerButtons = forceDealTrackerButtons;
         
         // Show commission reports for admins and managers
         function showCommissionReportsForAuthorized() {
