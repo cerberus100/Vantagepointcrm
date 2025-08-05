@@ -335,8 +335,29 @@
         .table-container {
             background: white;
             border-radius: 12px;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
             box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            /* Add scroll indicator styling */
+        }
+        
+        /* Scroll bar styling for table */
+        .table-container::-webkit-scrollbar {
+            height: 8px;
+        }
+        
+        .table-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        .table-container::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+        
+        .table-container::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
         }
 
         .table {
@@ -2623,6 +2644,10 @@
             </div>
 
             <!-- Leads Table -->
+            <div style="text-align: right; margin-bottom: 8px; color: #666; font-size: 0.85rem;">
+                <i class="fas fa-arrows-alt-h" style="margin-right: 4px;"></i>
+                Scroll horizontally to see all columns
+            </div>
             <div class="table-container">
                 <table class="table table-striped">
                     <thead>
