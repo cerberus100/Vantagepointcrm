@@ -1,0 +1,9 @@
+VantagePoint CRM - User Reset Log
+==================================================
+Date: 2025-08-04 17:51:38
+Users before reset: 31
+Users deleted: 0
+Failed deletions: 30
+Users remaining: 1 (admin)
+
+Deleted users:

@@ -1,0 +1,39 @@
+VantagePoint CRM - User Reset Log
+==================================================
+Date: 2025-08-04 17:52:23
+Users before reset: 31
+Users deleted: 30
+Failed deletions: 0
+Users remaining: 1 (admin)
+
+Deleted users:
+  - test_persistence_1753817406 (ID: 7, Role: agent)
+  - testdownline2 (ID: 28, Role: agent)
+  - newdownline1 (ID: 27, Role: agent)
+  - HealthRepublic (ID: 10, Role: manager)
+  - test_persistence_1753816159 (ID: 6, Role: agent)
+  - testuser (ID: 4, Role: agent)
+  - prod_test_1753827484 (ID: 9, Role: agent)
+  - prod_test_1753886699 (ID: 12, Role: agent)
+  - Zaydenmarketing (ID: 11, Role: manager)
+  - test_agent_for_hr (ID: 20, Role: agent)
+  - test_agent_hr (ID: 19, Role: agent)
+  - temp_trigger_agent (ID: 25, Role: agent)
+  - test_manager_1753991907 (ID: 18, Role: manager)
+  - hr_agent1 (ID: 30, Role: agent)
+  - manager1 (ID: 2, Role: manager)
+  - healthrepublic (ID: 29, Role: agent)
+  - test_mgr_debug (ID: 16, Role: manager)
+  - real_agent_1 (ID: 22, Role: agent)
+  - agentrepublic2 (ID: 23, Role: agent)
+  - hr_manager (ID: 31, Role: manager)
+  - testagent1 (ID: 26, Role: agent)
+  - prod_test_1753826820 (ID: 8, Role: agent)
+  - test_agent_mgr_1753991896 (ID: 17, Role: agent)
+  - test_manager_1753991831 (ID: 15, Role: manager)
+  - agentrepublic1 (ID: 21, Role: agent)
+  - testAgent123 (ID: 24, Role: agent)
+  - agent2 (ID: 5, Role: agent)
+  - agent1 (ID: 3, Role: agent)
+  - HealthRepublicagent (ID: 14, Role: agent)
+  - test_agent_1753930039 (ID: 13, Role: agent)
