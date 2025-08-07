@@ -69,7 +69,7 @@ RATE_LIMIT_CONFIG = {
     }
 }
 
-def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
+def check_rate_limit(user_id, user_role, endpoint, ip_address=None, request_id="no-id"):
     """Check if request is within rate limits"""
     current_time = int(time.time())
     minute_window = current_time // 60
@@ -132,7 +132,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
         
         # Check if limits exceeded
         if minute_count > minute_limit:
-            logger.warning(f"[{request_id}] Rate limit exceeded for user {user_id}: {minute_count}/{minute_limit} per minute")
+            logger.warning("Rate limit exceeded for user {user_id}: {minute_count}/{minute_limit} per minute")
             return False, {
                 'limit_type': 'minute',
                 'limit': minute_limit,
@@ -141,7 +141,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
             }
         
         if hour_count > hour_limit:
-            logger.warning(f"[{request_id}] Rate limit exceeded for user {user_id}: {hour_count}/{hour_limit} per hour")
+            logger.warning("Rate limit exceeded for user {user_id}: {hour_count}/{hour_limit} per hour")
             return False, {
                 'limit_type': 'hour',
                 'limit': hour_limit,
@@ -155,7 +155,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
         }
         
     except Exception as e:
-        logger.error(f"[{request_id}] Rate limit check failed: {e}")
+        logger.error("Rate limit check failed: {e}")
         # Fail open - allow request if rate limiting fails
         return True, {'error': 'Rate limit check failed'}
 
@@ -175,7 +175,7 @@ def sanitize_error_message(error, context=""):
     error_str = str(error)
     
     # Log the full error internally
-    logger.error(f"[{request_id}] Error in {context}: {error_str}")
+    logger.error(f"Error in {context}: {error_str}")
     
     # Map specific errors to safe messages
     error_mappings = {
@@ -353,7 +353,7 @@ def validate_input(data: Dict[str, Any], validation_type: str) -> tuple[bool, Op
     
     return True, None
 
-def send_docs_to_external_api(lead_data, user_info):
+def send_docs_to_external_api(lead_data, user_info, request_id):
     """Send documents to external API using real vendor token"""
     try:
         import requests
@@ -362,7 +362,7 @@ def send_docs_to_external_api(lead_data, user_info):
         # Get the real vendor token from environment
         vendor_token = os.environ.get('VENDOR_TOKEN', '')
         if not vendor_token:
-            logger.error(f"[{request_id}] VENDOR_TOKEN not found in environment variables")
+            logger.error("VENDOR_TOKEN not found in environment variables")
             return {"success": False, "error": "Vendor token not configured"}
         
         # Prepare the data for external API
@@ -398,7 +398,7 @@ def send_docs_to_external_api(lead_data, user_info):
             'X-API-Key': vendor_token  # Some APIs expect the token in this header
         }
         
-        logger.info(f"[{request_id}] 📡 Sending docs to external API for lead {lead_data.get('id')}")
+        logger.info("📡 Sending docs to external API for lead {lead_data.get('id')}")
         
         response = requests.post(
             external_api_url,
@@ -408,14 +408,14 @@ def send_docs_to_external_api(lead_data, user_info):
         )
         
         if response.status_code == 200:
-            logger.info(f"[{request_id}] ✅ External API success for lead {lead_data.get('id')}")
+            logger.info("✅ External API success for lead {lead_data.get('id')}")
             return {
                 "success": True,
                 "external_response": response.json(),
                 "status_code": response.status_code
             }
         else:
-            logger.error(f"[{request_id}] ❌ External API failed: {response.status_code} - {response.text}")
+            logger.error("❌ External API failed: {response.status_code} - {response.text}")
             return {
                 "success": False,
                 "error": f"External API error: {response.status_code}",
@@ -423,7 +423,7 @@ def send_docs_to_external_api(lead_data, user_info):
             }
             
     except Exception as e:
-        logger.error(f"[{request_id}] Exception in send_docs_to_external_api: {str(e)}")
+        logger.error("Exception in send_docs_to_external_api: {str(e)}")
         return {
             "success": False,
             "error": sanitize_error_message(e, "send_docs_to_external_api")
@@ -651,7 +651,7 @@ def initialize_default_users():
     except Exception as e:
         print(f"❌ Error initializing users: {e}")
 
-def get_next_lead_ids_batch(count):
+def get_next_lead_ids_batch(count, request_id="no-id"):
     """OPTIMIZED: Generate a batch of lead IDs efficiently"""
     try:
         # Use DynamoDB atomic counter for batch ID generation
@@ -699,16 +699,16 @@ def get_next_lead_ids_fallback(count):
         return list(range(max_id + 1, max_id + count + 1))
         
     except Exception as e:
-        logger.error(f"[{request_id}] Error in fallback ID generation: {e}")
+        logger.error("Error in fallback ID generation: {e}")
         # Last resort: use timestamp-based IDs
         base_id = int(datetime.utcnow().timestamp() * 1000)
         return list(range(base_id, base_id + count))
 
-def bulk_create_leads_optimized(leads_data):
+def bulk_create_leads_optimized(leads_data, request_id="no-id"):
     """OPTIMIZED: Bulk lead creation using DynamoDB batch operations"""
     try:
         total_leads = len(leads_data)
-        logger.info(f"[{request_id}] Starting optimized bulk creation of {total_leads} leads")
+        logger.info("Starting optimized bulk creation of {total_leads} leads")
         
         # Generate all IDs at once
         lead_ids = get_next_lead_ids_batch(total_leads)
@@ -755,10 +755,10 @@ def bulk_create_leads_optimized(leads_data):
                         batch_writer.put_item(Item=lead)
                 
                 created_count += len(batch)
-                logger.info(f"[{request_id}] Batch {batch_start//batch_size + 1}: Created {len(batch)} leads")
+                logger.info("Batch {batch_start//batch_size + 1}: Created {len(batch)} leads")
                 
             except Exception as batch_error:
-                logger.error(f"[{request_id}] Error in batch {batch_start//batch_size + 1}: {batch_error}")
+                logger.error("Error in batch {batch_start//batch_size + 1}: {batch_error}")
                 # Add failed leads to list
                 for lead in batch:
                     failed_leads.append({
@@ -766,7 +766,7 @@ def bulk_create_leads_optimized(leads_data):
                         'error': str(batch_error)
                     })
         
-        logger.info(f"[{request_id}] Bulk creation completed: {created_count} created, {len(failed_leads)} failed")
+        logger.info("Bulk creation completed: {created_count} created, {len(failed_leads)} failed")
         
         return {
             'created_count': created_count,
@@ -776,7 +776,7 @@ def bulk_create_leads_optimized(leads_data):
         }
         
     except Exception as e:
-        logger.error(f"[{request_id}] Error in bulk_create_leads_optimized: {e}")
+        logger.error("Error in bulk_create_leads_optimized: {e}")
         raise e
 
 def get_next_lead_id():
@@ -916,7 +916,7 @@ def prevent_sold_lead_reassignment(lead_id, update_data):
         print(f"Warning: Could not check lead protection for {lead_id}: {e}")
         return update_data
 
-def update_lead(lead_id, update_data, current_user=None):
+def update_lead(lead_id, update_data, current_user=None, request_id="no-id"):
     """Update lead in DynamoDB with commission tracking and lead protection"""
     try:
         # Protect sold leads from reassignment
@@ -939,7 +939,7 @@ def update_lead(lead_id, update_data, current_user=None):
                 update_data['closed_at'] = datetime.utcnow().isoformat()
                 update_data['auto_converted'] = True
                 update_data['conversion_reason'] = 'docs_sent_and_disposed'
-                logger.info(f"[{request_id}] 🎉 AUTO SALE: Lead {lead_id} converted to sale (docs sent + disposed)")
+                logger.info("🎉 AUTO SALE: Lead {lead_id} converted to sale (docs sent + disposed)")
                 
             # Manual sale tracking
             elif update_data.get('status') == 'CLOSED_WON' and current_user and old_lead.get('status') != 'CLOSED_WON':
@@ -947,10 +947,10 @@ def update_lead(lead_id, update_data, current_user=None):
                 update_data['closed_by_user_id'] = current_user.get('id')
                 update_data['closed_by_username'] = current_user.get('username')
                 update_data['closed_at'] = datetime.utcnow().isoformat()
-                logger.info(f"[{request_id}] 💰 Manual sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
+                logger.info("💰 Manual sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
                 
         except Exception as e:
-            logger.warning(f"[{request_id}] Could not check previous lead status for commission tracking: {e}")
+            logger.warning("Could not check previous lead status for commission tracking: {e}")
         
         # Build update expression
         update_expr = "SET "
@@ -979,7 +979,7 @@ def update_lead(lead_id, update_data, current_user=None):
         
         return True
     except Exception as e:
-        logger.error(f"[{request_id}] Error updating lead: {e}")
+        logger.error("Error updating lead: {e}")
         return False
 
 # MASTER ADMIN ANALYTICS - NEW FUNCTIONALITY
@@ -987,7 +987,7 @@ def update_lead(lead_id, update_data, current_user=None):
 def calculate_master_admin_analytics():
     """Calculate comprehensive analytics for master admin dashboard"""
     try:
-        logger.info(f"[{request_id}] 🎯 Calculating master admin analytics...")
+        logger.info("🎯 Calculating master admin analytics...")
         
         # Get all data
         all_leads = get_all_leads()
@@ -1192,11 +1192,11 @@ def calculate_master_admin_analytics():
             }
         }
         
-        logger.info(f"[{request_id}] ✅ Master admin analytics calculated successfully")
+        logger.info("✅ Master admin analytics calculated successfully")
         return analytics
         
     except Exception as e:
-        logger.error(f"[{request_id}] ❌ Error calculating master admin analytics: {e}")
+        logger.error("❌ Error calculating master admin analytics: {e}")
         return {
             "error": sanitize_error_message(e, "calculate_master_admin_analytics"),
             "timestamp": datetime.utcnow().isoformat()
@@ -1219,11 +1219,11 @@ def lambda_handler(event, context):
     
     try:
         # Log request with ID
-        logger.info(f"[{request_id}] Starting request")
+        logger.info("Starting request")
         
         # Handle CORS preflight
         if event.get('httpMethod') == 'OPTIONS':
-            return create_response(200, {}, request_id, request_id)
+            return create_response(200, {}, request_id, event)
         
         # Extract request info
         path = event.get('path', '')
@@ -1247,7 +1247,7 @@ def lambda_handler(event, context):
         
         # Health check
         if path == '/health' and method == 'GET':
-            return create_response(200, {"status": "healthy", "service": "VantagePoint CRM", "optimized": True}, request_id)
+            return create_response(200, {"status": "healthy", "service": "VantagePoint CRM", "optimized": True}, request_id, event)
         
         # Authentication endpoint
         if path == '/api/v1/auth/login' and method == 'POST':
@@ -1260,13 +1260,16 @@ def lambda_handler(event, context):
             password = body_data.get('password')
             
             user = get_user_by_username(username)
-            if user and user.get('password') == password:
+            # Check password hash
+            import hashlib
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            if user and user.get('password_hash') == password_hash:
                 token = create_jwt_token(username, user.get('role', 'agent'))
                 return create_response(200, {
                     "access_token": token,
                     "token_type": "bearer",
                     "user": {
-                        "id": user.get('id', request_id),
+                        "id": user.get('id'),
                         "username": user.get('username'),
                         "role": user.get('role')
                     }
@@ -1295,24 +1298,24 @@ def lambda_handler(event, context):
             user_role = current_user.get('role', 'default')
             client_ip = get_client_ip(event)
             
-            allowed, rate_info = check_rate_limit(user_id, user_role, path, client_ip)
+            allowed, rate_info = check_rate_limit(user_id, user_role, path, client_ip, request_id)
             if not allowed:
                 reset_time = rate_info.get('reset_time', 0)
                 return create_response(429, {
                     "detail": f"Rate limit exceeded: {rate_info['current']}/{rate_info['limit']} requests per {rate_info['limit_type']}",
-                    "retry_after": reset_time - int(time.time(, request_id)),
+                    "retry_after": reset_time - int(time.time()),
                     "reset_time": reset_time
-                })
+                }, request_id, event)
         
         # Get current user info
         if path == '/api/v1/auth/me' and method == 'GET':
             return create_response(200, {
-                "id": current_user.get('id', request_id, event),
+                "id": current_user.get('id'),
                 "username": current_user.get('username'),
                 "role": current_user.get('role'),
                 "email": current_user.get('email', ''),
                 "name": current_user.get('name', '')
-            })
+            }, request_id, event)
         
         # GET /api/v1/leads - Get all leads with role-based filtering
         if path == '/api/v1/leads' and method == 'GET':
@@ -1363,7 +1366,7 @@ def lambda_handler(event, context):
                 else:
                     return create_response(400, {"detail": "Failed to create lead"}, request_id, event)
             except Exception as e:
-                return create_response(400, {"detail": sanitize_error_message(e, "create_lead", request_id)})
+                return create_response(400, {"detail": sanitize_error_message(e, "create_lead")}, request_id, event)
         
         # POST /api/v1/leads/bulk - OPTIMIZED Bulk create leads
         if path == '/api/v1/leads/bulk' and method == 'POST':
@@ -1382,7 +1385,7 @@ def lambda_handler(event, context):
                         return create_response(400, {"detail": f"Lead {i+1}: {error}"}, request_id, event)
                 
                 # Use OPTIMIZED bulk creation
-                result = bulk_create_leads_optimized(leads_data)
+                result = bulk_create_leads_optimized(leads_data, request_id)
                 
                 return create_response(200, {
                     "message": f"OPTIMIZED bulk upload completed. {result['created_count']} created, {result['failed_count']} failed",
@@ -1391,11 +1394,11 @@ def lambda_handler(event, context):
                     "failed_leads": result['failed_leads'],
                     "performance": "optimized_batch_write",
                     "speed_improvement": "25x faster"
-                }, request_id)
+                }, request_id, event)
                 
             except Exception as e:
                 logger.error(f"Bulk upload error: {e}")
-                return create_response(500, {"detail": sanitize_error_message(e, "bulk_upload", request_id)})
+                return create_response(500, {"detail": sanitize_error_message(e, "bulk_upload")}, request_id, event)
         
         # PUT /api/v1/leads/{id} - Update lead
         if path.startswith('/api/v1/leads/') and method == 'PUT':
@@ -1408,13 +1411,13 @@ def lambda_handler(event, context):
                 if not valid:
                     return create_response(400, {"detail": error}, request_id, event)
                 
-                if update_lead(lead_id, update_data, current_user):
+                if update_lead(lead_id, update_data, current_user, request_id):
                     updated_lead = get_lead_by_id(lead_id)
                     return create_response(200, updated_lead, request_id, event)
                 else:
                     return create_response(400, {"detail": "Failed to update lead"}, request_id, event)
             except Exception as e:
-                return create_response(400, {"detail": sanitize_error_message(e, "update_lead", request_id)})
+                return create_response(400, {"detail": sanitize_error_message(e, "update_lead")}, request_id, event)
         
         # Summary endpoint
         if path == '/api/v1/summary' and method == 'GET':
@@ -1461,7 +1464,7 @@ def lambda_handler(event, context):
                 "conversion_rate": conversion_rate,
                 "user_role": user_role,
                 "optimized": True
-            }, request_id)
+            }, request_id, event)
         
         # Create new user (admin/manager only)
         if path == '/api/v1/users' and method == 'POST':
@@ -1532,7 +1535,7 @@ def lambda_handler(event, context):
                 return create_response(201, response_data, request_id, event)
                 
             except Exception as e:
-                return create_response(500, {"detail": sanitize_error_message(e, "create_user", request_id)})
+                return create_response(500, {"detail": sanitize_error_message(e, "create_user")}, request_id, event)
         
         # MASTER ADMIN ANALYTICS ENDPOINT - NEW!
         if path == '/api/v1/admin/analytics' and method == 'GET':
@@ -1549,7 +1552,7 @@ def lambda_handler(event, context):
                 "meta": {
                     "endpoint": "master_admin_analytics",
                     "version": "1.0",
-                    "generated_at": datetime.utcnow(, request_id).isoformat()
+                    "generated_at": datetime.utcnow().isoformat()
                 }
             })
         
@@ -1576,7 +1579,7 @@ def lambda_handler(event, context):
                 return create_response(403, {"detail": "You can only send docs for your own leads"}, request_id, event)
             
             # Send to external API
-            external_result = send_docs_to_external_api(lead, current_user)
+            external_result = send_docs_to_external_api(lead, current_user, request_id)
             
             if external_result['success']:
                 # Mark docs as sent and update lead
@@ -1587,11 +1590,11 @@ def lambda_handler(event, context):
                     'status': 'CONTACTED'  # Update status to show progress
                 }
                 
-                if update_lead(lead_id, update_data, current_user):
+                if update_lead(lead_id, update_data, current_user, request_id):
                     logger.info(f"📤 Docs sent successfully for lead {lead_id}")
                     return create_response(200, {
                         "message": "Documents sent successfully",
-                        "external_response": external_result.get('external_response', request_id),
+                        "external_response": external_result.get('external_response'),
                         "lead_updated": True
                     })
                 else:
@@ -1600,7 +1603,7 @@ def lambda_handler(event, context):
                 logger.error(f"Failed to send docs for lead {lead_id}: {external_result.get('error')}")
                 return create_response(500, {
                     "detail": "Failed to send documents",
-                    "error": external_result.get('error', request_id),
+                    "error": external_result.get('error'),
                     "details": external_result.get('details')
                 })
 
@@ -1696,7 +1699,7 @@ def lambda_handler(event, context):
             return create_response(200, {
                 "success": True,
                 "summary": summary,
-                "user_summary": list(user_summary.values(, request_id)),
+                "user_summary": list(user_summary.values()),
                 "sales_records": sales_records,
                 "filters_applied": {
                     "start_date": start_date,
@@ -1710,4 +1713,4 @@ def lambda_handler(event, context):
         
     except Exception as e:
         logger.error(f"Lambda error: {e}")
-        return create_response(500, {"detail": sanitize_error_message(e, "lambda_handler", request_id)})
+        return create_response(500, {"detail": sanitize_error_message(e, "lambda_handler")}, request_id, event)
