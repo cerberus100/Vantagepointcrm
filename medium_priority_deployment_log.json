@@ -1,0 +1,42 @@
+{
+  "deployment_time": "2025-08-07T21:38:13.690578",
+  "medium_priority_improvements": {
+    "bulk_upload_optimization": {
+      "description": "Optimized bulk upload batching for better performance",
+      "features": [
+        "Dynamic batch sizing based on total leads",
+        "Parallel processing for uploads >500 leads",
+        "Progress tracking with request IDs",
+        "Better error recovery per batch",
+        "Thread pool executor for concurrent batches"
+      ]
+    },
+    "request_tracking": {
+      "description": "Request ID tracking for debugging",
+      "features": [
+        "Unique UUID for each request",
+        "Request ID in response headers (X-Request-ID)",
+        "Request ID in response body",
+        "Request ID in all log messages",
+        "Correlation across entire request lifecycle"
+      ]
+    },
+    "cors_tightening": {
+      "description": "Tightened CORS policy to specific domains",
+      "features": [
+        "Whitelist of allowed origins only",
+        "Dynamic origin validation",
+        "Credentials support enabled",
+        "Localhost allowed for development only",
+        "Default to main domain if origin unknown"
+      ]
+    }
+  },
+  "allowed_origins": [
+    "https://vantagepointcrm.com",
+    "https://www.vantagepointcrm.com",
+    "https://main.d3eve7po1zc3ec.amplifyapp.com",
+    "http://localhost:3000 (dev)",
+    "http://localhost:8080 (dev)"
+  ]
+}

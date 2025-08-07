@@ -20,6 +20,9 @@ import os
 import time
 import re
 from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import uuid
 
 # Configure logging
 logger = logging.getLogger()
@@ -30,6 +33,10 @@ dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 users_table = dynamodb.Table('vantagepoint-users')
 leads_table = dynamodb.Table('vantagepoint-leads')
 rate_limit_table = dynamodb.Table('vantagepoint-rate-limits')
+
+# Global progress tracking for bulk uploads
+bulk_upload_progress = {}
+progress_lock = threading.Lock()
 
 # Rate limiting configuration
 RATE_LIMIT_CONFIG = {
@@ -125,7 +132,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
         
         # Check if limits exceeded
         if minute_count > minute_limit:
-            logger.warning(f"Rate limit exceeded for user {user_id}: {minute_count}/{minute_limit} per minute")
+            logger.warning(f"[{request_id}] Rate limit exceeded for user {user_id}: {minute_count}/{minute_limit} per minute")
             return False, {
                 'limit_type': 'minute',
                 'limit': minute_limit,
@@ -134,7 +141,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
             }
         
         if hour_count > hour_limit:
-            logger.warning(f"Rate limit exceeded for user {user_id}: {hour_count}/{hour_limit} per hour")
+            logger.warning(f"[{request_id}] Rate limit exceeded for user {user_id}: {hour_count}/{hour_limit} per hour")
             return False, {
                 'limit_type': 'hour',
                 'limit': hour_limit,
@@ -148,7 +155,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
         }
         
     except Exception as e:
-        logger.error(f"Rate limit check failed: {e}")
+        logger.error(f"[{request_id}] Rate limit check failed: {e}")
         # Fail open - allow request if rate limiting fails
         return True, {'error': 'Rate limit check failed'}
 
@@ -168,7 +175,7 @@ def sanitize_error_message(error, context=""):
     error_str = str(error)
     
     # Log the full error internally
-    logger.error(f"Error in {context}: {error_str}")
+    logger.error(f"[{request_id}] Error in {context}: {error_str}")
     
     # Map specific errors to safe messages
     error_mappings = {
@@ -355,7 +362,7 @@ def send_docs_to_external_api(lead_data, user_info):
         # Get the real vendor token from environment
         vendor_token = os.environ.get('VENDOR_TOKEN', '')
         if not vendor_token:
-            logger.error("VENDOR_TOKEN not found in environment variables")
+            logger.error(f"[{request_id}] VENDOR_TOKEN not found in environment variables")
             return {"success": False, "error": "Vendor token not configured"}
         
         # Prepare the data for external API
@@ -391,7 +398,7 @@ def send_docs_to_external_api(lead_data, user_info):
             'X-API-Key': vendor_token  # Some APIs expect the token in this header
         }
         
-        logger.info(f"📡 Sending docs to external API for lead {lead_data.get('id')}")
+        logger.info(f"[{request_id}] 📡 Sending docs to external API for lead {lead_data.get('id')}")
         
         response = requests.post(
             external_api_url,
@@ -401,14 +408,14 @@ def send_docs_to_external_api(lead_data, user_info):
         )
         
         if response.status_code == 200:
-            logger.info(f"✅ External API success for lead {lead_data.get('id')}")
+            logger.info(f"[{request_id}] ✅ External API success for lead {lead_data.get('id')}")
             return {
                 "success": True,
                 "external_response": response.json(),
                 "status_code": response.status_code
             }
         else:
-            logger.error(f"❌ External API failed: {response.status_code} - {response.text}")
+            logger.error(f"[{request_id}] ❌ External API failed: {response.status_code} - {response.text}")
             return {
                 "success": False,
                 "error": f"External API error: {response.status_code}",
@@ -416,7 +423,7 @@ def send_docs_to_external_api(lead_data, user_info):
             }
             
     except Exception as e:
-        logger.error(f"Exception in send_docs_to_external_api: {str(e)}")
+        logger.error(f"[{request_id}] Exception in send_docs_to_external_api: {str(e)}")
         return {
             "success": False,
             "error": sanitize_error_message(e, "send_docs_to_external_api")
@@ -492,15 +499,45 @@ def verify_jwt_token(token):
     except:
         return None
 
-def create_response(status_code, body):
-    """Create proper CORS response"""
+def get_allowed_origin(event):
+    """Get allowed origin based on request origin"""
+    headers = event.get('headers', {})
+    origin = headers.get('origin', headers.get('Origin', ''))
+    
+    # List of allowed origins
+    allowed_origins = [
+        'https://vantagepointcrm.com',
+        'https://www.vantagepointcrm.com',
+        'https://main.d3eve7po1zc3ec.amplifyapp.com',
+        'http://localhost:3000',  # Development only - remove in production
+        'http://localhost:8080'   # Development only - remove in production
+    ]
+    
+    # Check if origin is allowed
+    if origin in allowed_origins:
+        return origin
+    
+    # Default to main domain if origin not recognized
+    return 'https://vantagepointcrm.com'
+
+def create_response(status_code, body, request_id=None, event=None):
+    """Create proper CORS response with request tracking"""
+    # Add request ID to response body if provided
+    if request_id and isinstance(body, dict):
+        body['request_id'] = request_id
+    
+    # Get allowed origin for CORS
+    allowed_origin = get_allowed_origin(event) if event else 'https://vantagepointcrm.com'
+    
     return {
         'statusCode': status_code,
         'headers': {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Access-Control-Allow-Origin': allowed_origin,
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Request-ID',
             'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-            'Content-Type': 'application/json'
+            'Access-Control-Allow-Credentials': 'true',
+            'Content-Type': 'application/json',
+            'X-Request-ID': request_id or 'no-request-id'
         },
         'body': json_dumps(body)
     }
@@ -662,7 +699,7 @@ def get_next_lead_ids_fallback(count):
         return list(range(max_id + 1, max_id + count + 1))
         
     except Exception as e:
-        logger.error(f"Error in fallback ID generation: {e}")
+        logger.error(f"[{request_id}] Error in fallback ID generation: {e}")
         # Last resort: use timestamp-based IDs
         base_id = int(datetime.utcnow().timestamp() * 1000)
         return list(range(base_id, base_id + count))
@@ -671,7 +708,7 @@ def bulk_create_leads_optimized(leads_data):
     """OPTIMIZED: Bulk lead creation using DynamoDB batch operations"""
     try:
         total_leads = len(leads_data)
-        logger.info(f"Starting optimized bulk creation of {total_leads} leads")
+        logger.info(f"[{request_id}] Starting optimized bulk creation of {total_leads} leads")
         
         # Generate all IDs at once
         lead_ids = get_next_lead_ids_batch(total_leads)
@@ -718,10 +755,10 @@ def bulk_create_leads_optimized(leads_data):
                         batch_writer.put_item(Item=lead)
                 
                 created_count += len(batch)
-                logger.info(f"Batch {batch_start//batch_size + 1}: Created {len(batch)} leads")
+                logger.info(f"[{request_id}] Batch {batch_start//batch_size + 1}: Created {len(batch)} leads")
                 
             except Exception as batch_error:
-                logger.error(f"Error in batch {batch_start//batch_size + 1}: {batch_error}")
+                logger.error(f"[{request_id}] Error in batch {batch_start//batch_size + 1}: {batch_error}")
                 # Add failed leads to list
                 for lead in batch:
                     failed_leads.append({
@@ -729,7 +766,7 @@ def bulk_create_leads_optimized(leads_data):
                         'error': str(batch_error)
                     })
         
-        logger.info(f"Bulk creation completed: {created_count} created, {len(failed_leads)} failed")
+        logger.info(f"[{request_id}] Bulk creation completed: {created_count} created, {len(failed_leads)} failed")
         
         return {
             'created_count': created_count,
@@ -739,7 +776,7 @@ def bulk_create_leads_optimized(leads_data):
         }
         
     except Exception as e:
-        logger.error(f"Error in bulk_create_leads_optimized: {e}")
+        logger.error(f"[{request_id}] Error in bulk_create_leads_optimized: {e}")
         raise e
 
 def get_next_lead_id():
@@ -902,7 +939,7 @@ def update_lead(lead_id, update_data, current_user=None):
                 update_data['closed_at'] = datetime.utcnow().isoformat()
                 update_data['auto_converted'] = True
                 update_data['conversion_reason'] = 'docs_sent_and_disposed'
-                logger.info(f"🎉 AUTO SALE: Lead {lead_id} converted to sale (docs sent + disposed)")
+                logger.info(f"[{request_id}] 🎉 AUTO SALE: Lead {lead_id} converted to sale (docs sent + disposed)")
                 
             # Manual sale tracking
             elif update_data.get('status') == 'CLOSED_WON' and current_user and old_lead.get('status') != 'CLOSED_WON':
@@ -910,10 +947,10 @@ def update_lead(lead_id, update_data, current_user=None):
                 update_data['closed_by_user_id'] = current_user.get('id')
                 update_data['closed_by_username'] = current_user.get('username')
                 update_data['closed_at'] = datetime.utcnow().isoformat()
-                logger.info(f"💰 Manual sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
+                logger.info(f"[{request_id}] 💰 Manual sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
                 
         except Exception as e:
-            logger.warning(f"Could not check previous lead status for commission tracking: {e}")
+            logger.warning(f"[{request_id}] Could not check previous lead status for commission tracking: {e}")
         
         # Build update expression
         update_expr = "SET "
@@ -942,7 +979,7 @@ def update_lead(lead_id, update_data, current_user=None):
         
         return True
     except Exception as e:
-        logger.error(f"Error updating lead: {e}")
+        logger.error(f"[{request_id}] Error updating lead: {e}")
         return False
 
 # MASTER ADMIN ANALYTICS - NEW FUNCTIONALITY
@@ -950,7 +987,7 @@ def update_lead(lead_id, update_data, current_user=None):
 def calculate_master_admin_analytics():
     """Calculate comprehensive analytics for master admin dashboard"""
     try:
-        logger.info("🎯 Calculating master admin analytics...")
+        logger.info(f"[{request_id}] 🎯 Calculating master admin analytics...")
         
         # Get all data
         all_leads = get_all_leads()
@@ -1155,11 +1192,11 @@ def calculate_master_admin_analytics():
             }
         }
         
-        logger.info(f"✅ Master admin analytics calculated successfully")
+        logger.info(f"[{request_id}] ✅ Master admin analytics calculated successfully")
         return analytics
         
     except Exception as e:
-        logger.error(f"❌ Error calculating master admin analytics: {e}")
+        logger.error(f"[{request_id}] ❌ Error calculating master admin analytics: {e}")
         return {
             "error": sanitize_error_message(e, "calculate_master_admin_analytics"),
             "timestamp": datetime.utcnow().isoformat()
@@ -1177,10 +1214,16 @@ def get_all_users():
 def lambda_handler(event, context):
     """AWS Lambda handler with OPTIMIZED bulk upload"""
     
+    # Generate request ID for tracking
+    request_id = str(uuid.uuid4())
+    
     try:
+        # Log request with ID
+        logger.info(f"[{request_id}] Starting request")
+        
         # Handle CORS preflight
         if event.get('httpMethod') == 'OPTIONS':
-            return create_response(200, {})
+            return create_response(200, {}, request_id, request_id)
         
         # Extract request info
         path = event.get('path', '')
@@ -1204,14 +1247,14 @@ def lambda_handler(event, context):
         
         # Health check
         if path == '/health' and method == 'GET':
-            return create_response(200, {"status": "healthy", "service": "VantagePoint CRM", "optimized": True})
+            return create_response(200, {"status": "healthy", "service": "VantagePoint CRM", "optimized": True}, request_id)
         
         # Authentication endpoint
         if path == '/api/v1/auth/login' and method == 'POST':
             # Validate login input
             valid, error = validate_input(body_data, 'login')
             if not valid:
-                return create_response(400, {"detail": error})
+                return create_response(400, {"detail": error}, request_id, event)
             
             username = body_data.get('username')  # Already sanitized by validate_input
             password = body_data.get('password')
@@ -1223,29 +1266,29 @@ def lambda_handler(event, context):
                     "access_token": token,
                     "token_type": "bearer",
                     "user": {
-                        "id": user.get('id'),
+                        "id": user.get('id', request_id),
                         "username": user.get('username'),
                         "role": user.get('role')
                     }
                 })
             else:
-                return create_response(401, {"detail": "Invalid credentials"})
+                return create_response(401, {"detail": "Invalid credentials"}, request_id, event)
         
         # Authentication check for protected endpoints
         protected_endpoints = ['/api/v1/leads', '/api/v1/auth/me', '/api/v1/admin/analytics', '/api/v1/summary', '/api/v1/users', '/api/v1/reports']
         if any(path.startswith(endpoint) for endpoint in protected_endpoints):
             auth_header = headers.get('Authorization', headers.get('authorization', ''))
             if not auth_header or not auth_header.startswith('Bearer '):
-                return create_response(401, {"detail": "Authorization header required"})
+                return create_response(401, {"detail": "Authorization header required"}, request_id, event)
             
             token = auth_header.replace('Bearer ', '')
             payload = verify_jwt_token(token)
             if not payload:
-                return create_response(401, {"detail": "Invalid or expired token"})
+                return create_response(401, {"detail": "Invalid or expired token"}, request_id, event)
             
             current_user = get_user_by_username(payload.get('username'))
             if not current_user:
-                return create_response(401, {"detail": "User not found"})
+                return create_response(401, {"detail": "User not found"}, request_id, event)
             
             # Check rate limits for authenticated endpoints
             user_id = current_user.get('id')
@@ -1257,14 +1300,14 @@ def lambda_handler(event, context):
                 reset_time = rate_info.get('reset_time', 0)
                 return create_response(429, {
                     "detail": f"Rate limit exceeded: {rate_info['current']}/{rate_info['limit']} requests per {rate_info['limit_type']}",
-                    "retry_after": reset_time - int(time.time()),
+                    "retry_after": reset_time - int(time.time(, request_id)),
                     "reset_time": reset_time
                 })
         
         # Get current user info
         if path == '/api/v1/auth/me' and method == 'GET':
             return create_response(200, {
-                "id": current_user.get('id'),
+                "id": current_user.get('id', request_id, event),
                 "username": current_user.get('username'),
                 "role": current_user.get('role'),
                 "email": current_user.get('email', ''),
@@ -1297,7 +1340,7 @@ def lambda_handler(event, context):
             else:
                 filtered_leads = []
             
-            return create_response(200, {"leads": filtered_leads})
+            return create_response(200, {"leads": filtered_leads}, request_id, event)
         
         # POST /api/v1/leads - Create single lead
         if path == '/api/v1/leads' and method == 'POST':
@@ -1307,7 +1350,7 @@ def lambda_handler(event, context):
                 # Validate lead data
                 valid, error = validate_input(lead_data, 'create_lead')
                 if not valid:
-                    return create_response(400, {"detail": error})
+                    return create_response(400, {"detail": error}, request_id, event)
                 
                 lead_data['id'] = get_next_lead_id()
                 lead_data['created_at'] = datetime.utcnow().isoformat()
@@ -1316,27 +1359,27 @@ def lambda_handler(event, context):
                 
                 created_lead = create_lead(lead_data)
                 if created_lead:
-                    return create_response(201, created_lead)
+                    return create_response(201, created_lead, request_id, event)
                 else:
-                    return create_response(400, {"detail": "Failed to create lead"})
+                    return create_response(400, {"detail": "Failed to create lead"}, request_id, event)
             except Exception as e:
-                return create_response(400, {"detail": sanitize_error_message(e, "create_lead")})
+                return create_response(400, {"detail": sanitize_error_message(e, "create_lead", request_id)})
         
         # POST /api/v1/leads/bulk - OPTIMIZED Bulk create leads
         if path == '/api/v1/leads/bulk' and method == 'POST':
             try:
                 leads_data = body_data.get('leads', [])
                 if not leads_data or not isinstance(leads_data, list):
-                    return create_response(400, {"detail": "Invalid format. Expected {\"leads\": [...]}"})
+                    return create_response(400, {"detail": "Invalid format. Expected {\"leads\": [...]}"}, request_id, event)
                 
                 if len(leads_data) > 1000:
-                    return create_response(400, {"detail": "Maximum 1000 leads per batch"})
+                    return create_response(400, {"detail": "Maximum 1000 leads per batch"}, request_id, event)
                 
                 # Validate each lead
                 for i, lead in enumerate(leads_data):
                     valid, error = validate_input(lead, 'create_lead')
                     if not valid:
-                        return create_response(400, {"detail": f"Lead {i+1}: {error}"})
+                        return create_response(400, {"detail": f"Lead {i+1}: {error}"}, request_id, event)
                 
                 # Use OPTIMIZED bulk creation
                 result = bulk_create_leads_optimized(leads_data)
@@ -1348,11 +1391,11 @@ def lambda_handler(event, context):
                     "failed_leads": result['failed_leads'],
                     "performance": "optimized_batch_write",
                     "speed_improvement": "25x faster"
-                })
+                }, request_id)
                 
             except Exception as e:
                 logger.error(f"Bulk upload error: {e}")
-                return create_response(500, {"detail": sanitize_error_message(e, "bulk_upload")})
+                return create_response(500, {"detail": sanitize_error_message(e, "bulk_upload", request_id)})
         
         # PUT /api/v1/leads/{id} - Update lead
         if path.startswith('/api/v1/leads/') and method == 'PUT':
@@ -1363,15 +1406,15 @@ def lambda_handler(event, context):
                 # Validate update data
                 valid, error = validate_input(update_data, 'update_lead')
                 if not valid:
-                    return create_response(400, {"detail": error})
+                    return create_response(400, {"detail": error}, request_id, event)
                 
                 if update_lead(lead_id, update_data, current_user):
                     updated_lead = get_lead_by_id(lead_id)
-                    return create_response(200, updated_lead)
+                    return create_response(200, updated_lead, request_id, event)
                 else:
-                    return create_response(400, {"detail": "Failed to update lead"})
+                    return create_response(400, {"detail": "Failed to update lead"}, request_id, event)
             except Exception as e:
-                return create_response(400, {"detail": sanitize_error_message(e, "update_lead")})
+                return create_response(400, {"detail": sanitize_error_message(e, "update_lead", request_id)})
         
         # Summary endpoint
         if path == '/api/v1/summary' and method == 'GET':
@@ -1418,20 +1461,20 @@ def lambda_handler(event, context):
                 "conversion_rate": conversion_rate,
                 "user_role": user_role,
                 "optimized": True
-            })
+            }, request_id)
         
         # Create new user (admin/manager only)
         if path == '/api/v1/users' and method == 'POST':
             # Check permissions
             if current_user['role'] not in ['admin', 'manager']:
-                return create_response(403, {"detail": "Only admins and managers can create users"})
+                return create_response(403, {"detail": "Only admins and managers can create users"}, request_id, event)
             
             new_user_data = body_data
             
             # Validate user data
             valid, error = validate_input(new_user_data, 'create_user')
             if not valid:
-                return create_response(400, {"detail": error})
+                return create_response(400, {"detail": error}, request_id, event)
             
             username = new_user_data.get('username')  # Already sanitized
             password = new_user_data.get('password', 'admin123')  # Default password
@@ -1439,11 +1482,11 @@ def lambda_handler(event, context):
             
             # Check if user exists
             if get_user_by_username(username):
-                return create_response(400, {"detail": "Username already exists"})
+                return create_response(400, {"detail": "Username already exists"}, request_id, event)
             
             # Managers can only create agents
             if current_user['role'] == 'manager' and role != 'agent':
-                return create_response(403, {"detail": "Managers can only create agent accounts"})
+                return create_response(403, {"detail": "Managers can only create agent accounts"}, request_id, event)
             
             # Get next user ID
             try:
@@ -1486,16 +1529,16 @@ def lambda_handler(event, context):
                 if role == 'agent':
                     response_data["leads_assigned"] = assigned_count
                 
-                return create_response(201, response_data)
+                return create_response(201, response_data, request_id, event)
                 
             except Exception as e:
-                return create_response(500, {"detail": sanitize_error_message(e, "create_user")})
+                return create_response(500, {"detail": sanitize_error_message(e, "create_user", request_id)})
         
         # MASTER ADMIN ANALYTICS ENDPOINT - NEW!
         if path == '/api/v1/admin/analytics' and method == 'GET':
             # Ensure admin access
             if current_user.get('role') != 'admin':
-                return create_response(403, {"detail": "Admin access required"})
+                return create_response(403, {"detail": "Admin access required"}, request_id, event)
             
             logger.info("🎯 Master admin analytics requested")
             analytics = calculate_master_admin_analytics()
@@ -1506,7 +1549,7 @@ def lambda_handler(event, context):
                 "meta": {
                     "endpoint": "master_admin_analytics",
                     "version": "1.0",
-                    "generated_at": datetime.utcnow().isoformat()
+                    "generated_at": datetime.utcnow(, request_id).isoformat()
                 }
             })
         
@@ -1518,19 +1561,19 @@ def lambda_handler(event, context):
             lead = get_lead_by_id(lead_id)
             
             if not lead:
-                return create_response(404, {"detail": "Lead not found"})
+                return create_response(404, {"detail": "Lead not found"}, request_id, event)
             
             # Check if lead has required data
             if not lead.get('email'):
-                return create_response(400, {"detail": "Lead must have email before sending docs"})
+                return create_response(400, {"detail": "Lead must have email before sending docs"}, request_id, event)
             
             # Check if docs already sent
             if lead.get('docs_sent'):
-                return create_response(400, {"detail": "Documents already sent to this lead"})
+                return create_response(400, {"detail": "Documents already sent to this lead"}, request_id, event)
             
             # Check permissions - agents can only send docs for their own leads
             if current_user['role'] == 'agent' and lead.get("assigned_user_id") != current_user['id']:
-                return create_response(403, {"detail": "You can only send docs for your own leads"})
+                return create_response(403, {"detail": "You can only send docs for your own leads"}, request_id, event)
             
             # Send to external API
             external_result = send_docs_to_external_api(lead, current_user)
@@ -1548,16 +1591,16 @@ def lambda_handler(event, context):
                     logger.info(f"📤 Docs sent successfully for lead {lead_id}")
                     return create_response(200, {
                         "message": "Documents sent successfully",
-                        "external_response": external_result.get('external_response'),
+                        "external_response": external_result.get('external_response', request_id),
                         "lead_updated": True
                     })
                 else:
-                    return create_response(500, {"detail": "Failed to update lead after sending docs"})
+                    return create_response(500, {"detail": "Failed to update lead after sending docs"}, request_id, event)
             else:
                 logger.error(f"Failed to send docs for lead {lead_id}: {external_result.get('error')}")
                 return create_response(500, {
                     "detail": "Failed to send documents",
-                    "error": external_result.get('error'),
+                    "error": external_result.get('error', request_id),
                     "details": external_result.get('details')
                 })
 
@@ -1565,7 +1608,7 @@ def lambda_handler(event, context):
         if path == '/api/v1/reports/commission' and method == 'GET':
             # Check authorization
             if current_user.get('role') not in ['admin', 'manager']:
-                return create_response(403, {"detail": "Admin or Manager access required"})
+                return create_response(403, {"detail": "Admin or Manager access required"}, request_id, event)
             
             # Get query parameters
             query_params = event.get('queryStringParameters', {}) or {}
@@ -1653,7 +1696,7 @@ def lambda_handler(event, context):
             return create_response(200, {
                 "success": True,
                 "summary": summary,
-                "user_summary": list(user_summary.values()),
+                "user_summary": list(user_summary.values(, request_id)),
                 "sales_records": sales_records,
                 "filters_applied": {
                     "start_date": start_date,
@@ -1663,8 +1706,8 @@ def lambda_handler(event, context):
                 }
             })
 
-        return create_response(404, {"detail": "Endpoint not found"})
+        return create_response(404, {"detail": "Endpoint not found"}, request_id, event)
         
     except Exception as e:
         logger.error(f"Lambda error: {e}")
-        return create_response(500, {"detail": sanitize_error_message(e, "lambda_handler")})
+        return create_response(500, {"detail": sanitize_error_message(e, "lambda_handler", request_id)})
