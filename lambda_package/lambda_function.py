@@ -356,7 +356,8 @@ def validate_input(data: Dict[str, Any], validation_type: str) -> tuple[bool, Op
 def send_docs_to_external_api(lead_data, user_info, request_id):
     """Send documents to external API using real vendor token"""
     try:
-        import requests
+        import urllib.request
+        import urllib.error
         import os
         
         # Get the real vendor token from environment
@@ -367,6 +368,9 @@ def send_docs_to_external_api(lead_data, user_info, request_id):
         
         # Prepare the data for external API
         api_data = {
+            # Add email at root level as API expects
+            "email": lead_data.get('email', ''),
+            "vendorToken": vendor_token,  # Include token in payload
             "practiceInfo": {
                 "practiceName": lead_data.get('practice_name', ''),
                 "ownerName": lead_data.get('owner_name', ''),
@@ -398,28 +402,46 @@ def send_docs_to_external_api(lead_data, user_info, request_id):
             'X-API-Key': vendor_token  # Some APIs expect the token in this header
         }
         
-        logger.info("📡 Sending docs to external API for lead {lead_data.get('id')}")
+        logger.info(f"📡 Sending docs to external API for lead {lead_data.get('id')}")
         
-        response = requests.post(
+        # Convert data to JSON
+        json_data = json.dumps(api_data).encode('utf-8')
+        
+        # Create request
+        request = urllib.request.Request(
             external_api_url,
-            json=api_data,
+            data=json_data,
             headers=headers,
-            timeout=30
+            method='POST'
         )
         
-        if response.status_code == 200:
-            logger.info("✅ External API success for lead {lead_data.get('id')}")
-            return {
-                "success": True,
-                "external_response": response.json(),
-                "status_code": response.status_code
-            }
-        else:
-            logger.error("❌ External API failed: {response.status_code} - {response.text}")
+        try:
+            # Send request
+            with urllib.request.urlopen(request, timeout=30) as response:
+                response_data = response.read().decode('utf-8')
+                response_json = json.loads(response_data)
+                
+                logger.info(f"✅ External API success for lead {lead_data.get('id')}")
+                return {
+                    "success": True,
+                    "external_response": response_json,
+                    "status_code": response.status
+                }
+                
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8')
+            logger.error(f"❌ External API failed: {e.code} - {error_body}")
             return {
                 "success": False,
-                "error": f"External API error: {response.status_code}",
-                "details": response.text
+                "error": f"External API error: {e.code}",
+                "details": error_body
+            }
+        except urllib.error.URLError as e:
+            logger.error(f"❌ Network error: {str(e)}")
+            return {
+                "success": False,
+                "error": "Network error",
+                "details": str(e)
             }
             
     except Exception as e:
