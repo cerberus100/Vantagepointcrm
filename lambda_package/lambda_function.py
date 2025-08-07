@@ -17,6 +17,9 @@ from decimal import Decimal
 import logging
 from collections import defaultdict
 import os
+import time
+import re
+from typing import Dict, Any, List, Optional
 
 # Configure logging
 logger = logging.getLogger()
@@ -26,7 +29,322 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 users_table = dynamodb.Table('vantagepoint-users')
 leads_table = dynamodb.Table('vantagepoint-leads')
+rate_limit_table = dynamodb.Table('vantagepoint-rate-limits')
 
+# Rate limiting configuration
+RATE_LIMIT_CONFIG = {
+    'default': {
+        'requests_per_minute': 60,
+        'requests_per_hour': 1000
+    },
+    'agent': {
+        'requests_per_minute': 100,
+        'requests_per_hour': 2000
+    },
+    'manager': {
+        'requests_per_minute': 200,
+        'requests_per_hour': 5000
+    },
+    'admin': {
+        'requests_per_minute': 500,
+        'requests_per_hour': 10000
+    },
+    # Endpoint-specific limits
+    'endpoints': {
+        '/api/v1/leads/bulk': {
+            'requests_per_minute': 5,
+            'requests_per_hour': 50
+        },
+        '/api/v1/reports/commission': {
+            'requests_per_minute': 10,
+            'requests_per_hour': 100
+        }
+    }
+}
+
+def check_rate_limit(user_id, user_role, endpoint, ip_address=None):
+    """Check if request is within rate limits"""
+    current_time = int(time.time())
+    minute_window = current_time // 60
+    hour_window = current_time // 3600
+    
+    # Get rate limits for user role
+    role_limits = RATE_LIMIT_CONFIG.get(user_role, RATE_LIMIT_CONFIG['default'])
+    
+    # Check endpoint-specific limits
+    endpoint_limits = None
+    for pattern, limits in RATE_LIMIT_CONFIG['endpoints'].items():
+        if endpoint.startswith(pattern):
+            endpoint_limits = limits
+            break
+    
+    # Use more restrictive limits
+    if endpoint_limits:
+        minute_limit = min(role_limits['requests_per_minute'], endpoint_limits['requests_per_minute'])
+        hour_limit = min(role_limits['requests_per_hour'], endpoint_limits['requests_per_hour'])
+    else:
+        minute_limit = role_limits['requests_per_minute']
+        hour_limit = role_limits['requests_per_hour']
+    
+    try:
+        # Check minute rate limit
+        minute_key = f"user:{user_id}:minute:{minute_window}"
+        minute_response = rate_limit_table.update_item(
+            Key={'id': minute_key},
+            UpdateExpression='ADD request_count :inc',
+            ExpressionAttributeValues={':inc': 1},
+            ReturnValues='UPDATED_NEW'
+        )
+        minute_count = int(minute_response['Attributes']['request_count'])
+        
+        # Check hour rate limit
+        hour_key = f"user:{user_id}:hour:{hour_window}"
+        hour_response = rate_limit_table.update_item(
+            Key={'id': hour_key},
+            UpdateExpression='ADD request_count :inc',
+            ExpressionAttributeValues={':inc': 1},
+            ReturnValues='UPDATED_NEW'
+        )
+        hour_count = int(hour_response['Attributes']['request_count'])
+        
+        # Set TTL for automatic cleanup
+        ttl_minute = current_time + 120  # 2 minutes
+        ttl_hour = current_time + 7200    # 2 hours
+        
+        rate_limit_table.update_item(
+            Key={'id': minute_key},
+            UpdateExpression='SET ttl = :ttl',
+            ExpressionAttributeValues={':ttl': ttl_minute}
+        )
+        
+        rate_limit_table.update_item(
+            Key={'id': hour_key},
+            UpdateExpression='SET ttl = :ttl',
+            ExpressionAttributeValues={':ttl': ttl_hour}
+        )
+        
+        # Check if limits exceeded
+        if minute_count > minute_limit:
+            logger.warning(f"Rate limit exceeded for user {user_id}: {minute_count}/{minute_limit} per minute")
+            return False, {
+                'limit_type': 'minute',
+                'limit': minute_limit,
+                'current': minute_count,
+                'reset_time': (minute_window + 1) * 60
+            }
+        
+        if hour_count > hour_limit:
+            logger.warning(f"Rate limit exceeded for user {user_id}: {hour_count}/{hour_limit} per hour")
+            return False, {
+                'limit_type': 'hour',
+                'limit': hour_limit,
+                'current': hour_count,
+                'reset_time': (hour_window + 1) * 3600
+            }
+        
+        return True, {
+            'minute_usage': f"{minute_count}/{minute_limit}",
+            'hour_usage': f"{hour_count}/{hour_limit}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Rate limit check failed: {e}")
+        # Fail open - allow request if rate limiting fails
+        return True, {'error': 'Rate limit check failed'}
+
+def get_client_ip(event):
+    """Extract client IP from Lambda event"""
+    headers = event.get('headers', {})
+    # Check various headers for IP
+    ip = headers.get('X-Forwarded-For', headers.get('X-Real-IP', 
+         event.get('requestContext', {}).get('identity', {}).get('sourceIp', 'unknown')))
+    # Get first IP if multiple
+    if ',' in ip:
+        ip = ip.split(',')[0].strip()
+    return ip
+
+def sanitize_error_message(error, context=""):
+    """Sanitize error messages for production - prevent info leakage"""
+    error_str = str(error)
+    
+    # Log the full error internally
+    logger.error(f"Error in {context}: {error_str}")
+    
+    # Map specific errors to safe messages
+    error_mappings = {
+        "ValidationException": "Invalid request data",
+        "ResourceNotFoundException": "Resource not found",
+        "AccessDeniedException": "Access denied",
+        "ProvisionedThroughputExceededException": "Service temporarily unavailable",
+        "ItemCollectionSizeLimitExceededException": "Request size limit exceeded",
+        "ConditionalCheckFailedException": "Operation conflict",
+        "TransactionConflictException": "Operation conflict",
+        "RequestLimitExceeded": "Too many requests",
+        "ServiceUnavailable": "Service temporarily unavailable",
+        "InternalServerError": "Internal server error"
+    }
+    
+    # Check for known error types
+    for error_type, safe_message in error_mappings.items():
+        if error_type in error_str:
+            return safe_message
+    
+    # Check for sensitive patterns
+    sensitive_patterns = [
+        'password', 'token', 'secret', 'key', 'credential',
+        'database', 'table', 'schema', 'column', 'index',
+        'aws', 'dynamodb', 'lambda', 's3', 'cognito',
+        'email', 'phone', 'address', 'ssn', 'ein'
+    ]
+    
+    # If error contains sensitive info, return generic message
+    error_lower = error_str.lower()
+    for pattern in sensitive_patterns:
+        if pattern in error_lower:
+            return "An error occurred processing your request"
+    
+    # For validation errors, provide helpful but safe feedback
+    if "missing" in error_lower or "required" in error_lower:
+        return "Missing required fields"
+    if "invalid" in error_lower or "format" in error_lower:
+        return "Invalid data format"
+    if "duplicate" in error_lower or "exists" in error_lower:
+        return "Resource already exists"
+    if "not found" in error_lower or "does not exist" in error_lower:
+        return "Resource not found"
+    if "timeout" in error_lower or "timed out" in error_lower:
+        return "Request timed out"
+    
+    # Default safe message
+    return "An error occurred processing your request"
+
+def validate_input(data: Dict[str, Any], validation_type: str) -> tuple[bool, Optional[str]]:
+    """Validate and sanitize input data"""
+    
+    # Define validation patterns
+    patterns = {
+        'username': r'^[a-zA-Z0-9_-]{3,32}$',
+        'password': r'^.{8,128}$',
+        'email': r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+        'phone': r'^[\d\s\-\(\)\+\.]{10,20}$',
+        'zip_code': r'^\d{5}(-\d{4})?$',
+        'npi': r'^\d{10}$',
+        'ein': r'^\d{2}-?\d{7}$',
+        'state': r'^[A-Z]{2}$',
+        'status': r'^(new|contacted|qualified|closed_won|closed_lost|disposed|sold|NEW|CONTACTED|QUALIFIED|CLOSED_WON|CLOSED_LOST)$',
+        'role': r'^(admin|manager|agent)$'
+    }
+    
+    def sanitize_string(value: str, field_type: str = 'general') -> str:
+        """Sanitize string to prevent injection"""
+        if not isinstance(value, str):
+            return str(value)
+        
+        # Remove null bytes and trim
+        value = value.replace('\x00', '').strip()
+        
+        # Field-specific sanitization
+        if field_type == 'phone':
+            value = re.sub(r'[^0-9\s\-\(\)\+\.]', '', value)
+        elif field_type == 'email':
+            value = value.lower()
+            value = re.sub(r'[<>\"\'\\;]', '', value)
+        elif field_type == 'alphanumeric':
+            value = re.sub(r'[^a-zA-Z0-9\s\-_]', '', value)
+        elif field_type == 'numeric':
+            value = re.sub(r'[^0-9]', '', value)
+        else:
+            # Remove potential injection chars
+            for char in ['$', '{', '}', '<', '>', '`', '\\', '\n', '\r', '\t']:
+                value = value.replace(char, '')
+        
+        return value[:500]  # Max length
+    
+    # Login validation
+    if validation_type == 'login':
+        if not data.get('username') or not data.get('password'):
+            return False, "Username and password required"
+        
+        username = sanitize_string(data['username'], 'alphanumeric')
+        if not re.match(patterns['username'], username):
+            return False, "Invalid username format"
+        
+        if not re.match(patterns['password'], data['password']):
+            return False, "Invalid password format"
+        
+        data['username'] = username
+        return True, None
+    
+    # Lead validation
+    elif validation_type in ['create_lead', 'update_lead']:
+        if validation_type == 'create_lead':
+            # Check required fields
+            required = ['practice_name', 'owner_name', 'practice_phone']
+            for field in required:
+                if not data.get(field):
+                    return False, f"Missing required field: {field}"
+        
+        # Sanitize and validate fields
+        if 'practice_name' in data:
+            data['practice_name'] = sanitize_string(data['practice_name'])[:200]
+        
+        if 'owner_name' in data:
+            data['owner_name'] = sanitize_string(data['owner_name'])[:100]
+        
+        if 'email' in data and data['email']:
+            data['email'] = sanitize_string(data['email'], 'email')
+            if not re.match(patterns['email'], data['email']):
+                return False, "Invalid email format"
+        
+        if 'practice_phone' in data:
+            data['practice_phone'] = sanitize_string(data['practice_phone'], 'phone')
+            if not re.match(patterns['phone'], data['practice_phone']):
+                return False, "Invalid phone format"
+        
+        if 'zip_code' in data and data['zip_code']:
+            data['zip_code'] = sanitize_string(data['zip_code'], 'numeric')
+            if not re.match(patterns['zip_code'], data['zip_code']):
+                return False, "Invalid ZIP code"
+        
+        if 'npi' in data and data['npi']:
+            data['npi'] = sanitize_string(data['npi'], 'numeric')
+            if not re.match(patterns['npi'], data['npi']):
+                return False, "Invalid NPI"
+        
+        if 'state' in data and data['state']:
+            data['state'] = data['state'].upper()
+            if not re.match(patterns['state'], data['state']):
+                return False, "Invalid state code"
+        
+        if 'status' in data and not re.match(patterns['status'], data['status']):
+            return False, "Invalid status"
+        
+        return True, None
+    
+    # User validation
+    elif validation_type == 'create_user':
+        if not data.get('username') or not data.get('role'):
+            return False, "Username and role required"
+        
+        data['username'] = sanitize_string(data['username'], 'alphanumeric')
+        if not re.match(patterns['username'], data['username']):
+            return False, "Invalid username format"
+        
+        if not re.match(patterns['role'], data['role']):
+            return False, "Invalid role"
+        
+        if 'password' in data and data['password']:
+            if not re.match(patterns['password'], data['password']):
+                return False, "Password must be 8-128 characters"
+        
+        if 'email' in data and data['email']:
+            data['email'] = sanitize_string(data['email'], 'email')
+            if not re.match(patterns['email'], data['email']):
+                return False, "Invalid email format"
+        
+        return True, None
+    
+    return True, None
 
 def send_docs_to_external_api(lead_data, user_info):
     """Send documents to external API using real vendor token"""
@@ -101,7 +419,7 @@ def send_docs_to_external_api(lead_data, user_info):
         logger.error(f"Exception in send_docs_to_external_api: {str(e)}")
         return {
             "success": False,
-            "error": f"Failed to send docs: {str(e)}"
+            "error": sanitize_error_message(e, "send_docs_to_external_api")
         }
 
 # Helper function to handle DynamoDB Decimal types in JSON
@@ -843,7 +1161,7 @@ def calculate_master_admin_analytics():
     except Exception as e:
         logger.error(f"❌ Error calculating master admin analytics: {e}")
         return {
-            "error": str(e),
+            "error": sanitize_error_message(e, "calculate_master_admin_analytics"),
             "timestamp": datetime.utcnow().isoformat()
         }
 
@@ -890,11 +1208,13 @@ def lambda_handler(event, context):
         
         # Authentication endpoint
         if path == '/api/v1/auth/login' and method == 'POST':
-            username = body_data.get('username')
-            password = body_data.get('password')
+            # Validate login input
+            valid, error = validate_input(body_data, 'login')
+            if not valid:
+                return create_response(400, {"detail": error})
             
-            if not username or not password:
-                return create_response(400, {"detail": "Username and password required"})
+            username = body_data.get('username')  # Already sanitized by validate_input
+            password = body_data.get('password')
             
             user = get_user_by_username(username)
             if user and user.get('password') == password:
@@ -926,6 +1246,20 @@ def lambda_handler(event, context):
             current_user = get_user_by_username(payload.get('username'))
             if not current_user:
                 return create_response(401, {"detail": "User not found"})
+            
+            # Check rate limits for authenticated endpoints
+            user_id = current_user.get('id')
+            user_role = current_user.get('role', 'default')
+            client_ip = get_client_ip(event)
+            
+            allowed, rate_info = check_rate_limit(user_id, user_role, path, client_ip)
+            if not allowed:
+                reset_time = rate_info.get('reset_time', 0)
+                return create_response(429, {
+                    "detail": f"Rate limit exceeded: {rate_info['current']}/{rate_info['limit']} requests per {rate_info['limit_type']}",
+                    "retry_after": reset_time - int(time.time()),
+                    "reset_time": reset_time
+                })
         
         # Get current user info
         if path == '/api/v1/auth/me' and method == 'GET':
@@ -969,6 +1303,12 @@ def lambda_handler(event, context):
         if path == '/api/v1/leads' and method == 'POST':
             try:
                 lead_data = body_data
+                
+                # Validate lead data
+                valid, error = validate_input(lead_data, 'create_lead')
+                if not valid:
+                    return create_response(400, {"detail": error})
+                
                 lead_data['id'] = get_next_lead_id()
                 lead_data['created_at'] = datetime.utcnow().isoformat()
                 lead_data['updated_at'] = datetime.utcnow().isoformat()
@@ -980,7 +1320,7 @@ def lambda_handler(event, context):
                 else:
                     return create_response(400, {"detail": "Failed to create lead"})
             except Exception as e:
-                return create_response(400, {"detail": f"Invalid lead data: {str(e)}"})
+                return create_response(400, {"detail": sanitize_error_message(e, "create_lead")})
         
         # POST /api/v1/leads/bulk - OPTIMIZED Bulk create leads
         if path == '/api/v1/leads/bulk' and method == 'POST':
@@ -991,6 +1331,12 @@ def lambda_handler(event, context):
                 
                 if len(leads_data) > 1000:
                     return create_response(400, {"detail": "Maximum 1000 leads per batch"})
+                
+                # Validate each lead
+                for i, lead in enumerate(leads_data):
+                    valid, error = validate_input(lead, 'create_lead')
+                    if not valid:
+                        return create_response(400, {"detail": f"Lead {i+1}: {error}"})
                 
                 # Use OPTIMIZED bulk creation
                 result = bulk_create_leads_optimized(leads_data)
@@ -1006,7 +1352,7 @@ def lambda_handler(event, context):
                 
             except Exception as e:
                 logger.error(f"Bulk upload error: {e}")
-                return create_response(500, {"detail": f"Bulk upload error: {str(e)}"})
+                return create_response(500, {"detail": sanitize_error_message(e, "bulk_upload")})
         
         # PUT /api/v1/leads/{id} - Update lead
         if path.startswith('/api/v1/leads/') and method == 'PUT':
@@ -1014,13 +1360,18 @@ def lambda_handler(event, context):
                 lead_id = path.split('/')[-1]
                 update_data = body_data
                 
+                # Validate update data
+                valid, error = validate_input(update_data, 'update_lead')
+                if not valid:
+                    return create_response(400, {"detail": error})
+                
                 if update_lead(lead_id, update_data, current_user):
                     updated_lead = get_lead_by_id(lead_id)
                     return create_response(200, updated_lead)
                 else:
                     return create_response(400, {"detail": "Failed to update lead"})
             except Exception as e:
-                return create_response(400, {"detail": f"Update error: {str(e)}"})
+                return create_response(400, {"detail": sanitize_error_message(e, "update_lead")})
         
         # Summary endpoint
         if path == '/api/v1/summary' and method == 'GET':
@@ -1076,12 +1427,15 @@ def lambda_handler(event, context):
                 return create_response(403, {"detail": "Only admins and managers can create users"})
             
             new_user_data = body_data
-            username = new_user_data.get('username')
+            
+            # Validate user data
+            valid, error = validate_input(new_user_data, 'create_user')
+            if not valid:
+                return create_response(400, {"detail": error})
+            
+            username = new_user_data.get('username')  # Already sanitized
             password = new_user_data.get('password', 'admin123')  # Default password
             role = new_user_data.get('role', 'agent')
-            
-            if not username:
-                return create_response(400, {"detail": "Username is required"})
             
             # Check if user exists
             if get_user_by_username(username):
@@ -1135,7 +1489,7 @@ def lambda_handler(event, context):
                 return create_response(201, response_data)
                 
             except Exception as e:
-                return create_response(500, {"detail": f"Failed to create user: {str(e)}"})
+                return create_response(500, {"detail": sanitize_error_message(e, "create_user")})
         
         # MASTER ADMIN ANALYTICS ENDPOINT - NEW!
         if path == '/api/v1/admin/analytics' and method == 'GET':
@@ -1313,4 +1667,4 @@ def lambda_handler(event, context):
         
     except Exception as e:
         logger.error(f"Lambda error: {e}")
-        return create_response(500, {"detail": f"Internal server error: {str(e)}"})
+        return create_response(500, {"detail": sanitize_error_message(e, "lambda_handler")})

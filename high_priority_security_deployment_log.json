@@ -1,0 +1,39 @@
+{
+  "deployment_time": "2025-08-07T21:24:24.332615",
+  "security_improvements": {
+    "rate_limiting": {
+      "description": "Added rate limiting to prevent DDoS",
+      "features": [
+        "Role-based rate limits (admin: 500/min, manager: 200/min, agent: 100/min)",
+        "Endpoint-specific limits for bulk operations",
+        "DynamoDB-based distributed rate limiting",
+        "Automatic TTL cleanup"
+      ]
+    },
+    "error_sanitization": {
+      "description": "Sanitized error messages to prevent info leakage",
+      "features": [
+        "Generic error messages for production",
+        "Full error logging internally",
+        "Sensitive pattern detection",
+        "Safe error mappings"
+      ]
+    },
+    "input_validation": {
+      "description": "Added comprehensive input validation",
+      "features": [
+        "Pattern validation for all fields",
+        "Length limits to prevent buffer overflows",
+        "Input sanitization to prevent injection",
+        "Field-specific validation rules"
+      ]
+    }
+  },
+  "endpoints_protected": [
+    "/api/v1/auth/login - Login validation",
+    "/api/v1/leads - Lead creation validation",
+    "/api/v1/leads/{id} - Lead update validation",
+    "/api/v1/leads/bulk - Bulk upload validation",
+    "/api/v1/users - User creation validation"
+  ]
+}
