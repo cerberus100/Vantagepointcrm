@@ -1,0 +1,15 @@
+{
+  "deployment_time": "2025-08-07T20:50:07.484027",
+  "fix_description": "Extended JWT token expiry from 1 hour to 24 hours",
+  "issues_fixed": [
+    "Agents getting logged out after 1 hour",
+    "Failed to update lead: Invalid or expired token",
+    "Authentication timeouts during lead editing"
+  ],
+  "code_changes": {
+    "file": "lambda_function.py",
+    "line": 130,
+    "old_value": "int(time.time()) + 3600  # 1 hour expiry",
+    "new_value": "int(time.time()) + 86400  # 24 hour expiry (was 1 hour)"
+  }
+}

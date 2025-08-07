@@ -62,3 +62,4 @@ crm_venv/
 logs/
 uploads/
 temp/
+.jwt_secret_backup.json

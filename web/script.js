@@ -14,12 +14,9 @@ let currentUser = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 VantagePoint - Application Starting...');
-    console.log('📊 Initial allLeads:', Array.isArray(allLeads), allLeads.length);
     hideLoadingOverlay();
     initializeAuth();
     setupEventListeners();
-    console.log('✅ VantagePoint - Initialization Complete');
 });
 
         main
@@ -27,15 +24,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Authentication functions
 async function initializeAuth() {
-    console.log('🔐 Initializing authentication...');
     authToken = localStorage.getItem('token'); // Match login.html key
     
-    console.log('🔑 Token exists:', !!authToken);
     
     if (authToken) {
         try {
             // Verify token and get current user context from backend
-            console.log('🔍 Verifying token with /auth/me...');
             const userResponse = await fetch(`${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.ME}`, {
                 headers: {
                     'Authorization': `Bearer ${authToken}`
@@ -43,7 +37,6 @@ async function initializeAuth() {
             });
             
             if (!userResponse.ok) {
-                console.log('❌ Token invalid, redirecting to login');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user_data');
                 showLogin();
@@ -53,18 +46,15 @@ async function initializeAuth() {
             currentUser = await userResponse.json();
             localStorage.setItem('user_data', JSON.stringify(currentUser));
             
-            console.log('✅ User authenticated:', currentUser.username, 'Role:', currentUser.role);
             showDashboard();
             loadData();
             
         } catch (e) {
-            console.error('❌ Authentication verification failed:', e);
             localStorage.removeItem('token');
             localStorage.removeItem('user_data');
             showLogin();
         }
     } else {
-        console.log('❌ No authentication found, showing login');
         showLogin();
     }
 }
@@ -212,14 +202,12 @@ async function handleLogin(e) {
         currentUser = await userResponse.json();
         localStorage.setItem('user_data', JSON.stringify(currentUser));
         
-        console.log('✅ User authenticated:', currentUser.username, 'Role:', currentUser.role, 'ID:', currentUser.id);
         
         // Show dashboard
         showDashboard();
         loadData();
         
     } catch (error) {
-        console.error('Login error:', error);
         errorDiv.textContent = 'Login failed. Please check your credentials.';
         errorDiv.style.display = 'block';
     }
@@ -286,7 +274,6 @@ async function apiCall(endpoint, options = {}) {
         
         return await response.json();
     } catch (error) {
-        console.error('API call failed:', error);
         throw error;
     }
 }
@@ -294,23 +281,19 @@ async function apiCall(endpoint, options = {}) {
 // CRITICAL FIX: Role-based lead filtering function
 function applyRoleBasedFiltering(leads) {
     if (!currentUser || !Array.isArray(leads)) {
-        console.log('⚠️ No user context or invalid leads array, returning all leads');
         return leads;
     }
     
     const userRole = currentUser.role;
     const userId = currentUser.id;
     
-    console.log(`🎭 Applying ${userRole} role filtering for user ID: ${userId}`);
     
     switch (userRole) {
         case 'agent':
             // Agents see ONLY their assigned leads
             const agentLeads = leads.filter(lead => lead.assigned_user_id === userId);
-            console.log(`🎯 Agent filtering: ${agentLeads.length} assigned leads found`);
             if (agentLeads.length > 0) {
                 agentLeads.forEach(lead => {
-                    console.log(`   • ${lead.practice_name} (ID: ${lead.id})`);
                 });
             }
             return agentLeads;
@@ -318,16 +301,13 @@ function applyRoleBasedFiltering(leads) {
         case 'manager':
             // Managers see their leads + their agents' leads
             // For now, show all leads (TODO: implement team hierarchy)
-            console.log(`👔 Manager viewing all leads (team hierarchy not yet implemented)`);
             return leads;
             
         case 'admin':
             // Admins see all leads
-            console.log(`👑 Admin viewing all ${leads.length} leads`);
             return leads;
             
         default:
-            console.log(`⚠️ Unknown role: ${userRole}, showing no leads for security`);
             return [];
     }
 }
@@ -337,7 +317,6 @@ async function loadData() {
     try {
         showLoadingOverlay();
         
-        console.log('🔄 Loading data from API...');
         
         // Add timeout to prevent hanging
         const timeoutPromise = new Promise((_, reject) => 
@@ -353,42 +332,32 @@ async function loadData() {
             timeoutPromise
         ]);
 
-        console.log('📊 API Response - Leads:', leadsData);
-        console.log('📈 API Response - Summary:', summaryResponse);
 
         // Ensure we have valid data
         allLeads = Array.isArray(leadsData?.leads) ? leadsData.leads : [];
         summaryData = summaryResponse || {};
         
-        console.log('✅ Processed data - allLeads:', allLeads.length, 'items');
         
         // CRITICAL FIX: Apply role-based filtering
         filteredLeads = applyRoleBasedFiltering(allLeads);
-        console.log(`🎯 Role-based filtering applied - User: ${currentUser?.role}, Filtered leads: ${filteredLeads.length}/${allLeads.length}`);
         
         // Initialize the UI
-        console.log('🔧 Initializing UI components...');
         updateUserInfo(); // Update user display
         updateDashboardStats();
         populateFilterDropdowns();
-        console.log('📋 filteredLeads set:', filteredLeads.length);
         renderLeadsTable();
         updateLastUpdated();
         loadLeadDataFromStorage(); // Load disposition and notes
         
         // Force update any remaining loading states
-        console.log('🧹 Clearing remaining loading states...');
         document.querySelectorAll('.loading').forEach(el => {
             if (el.textContent.includes('Loading...')) {
-                console.log('🔄 Updating loading element:', el.textContent);
                 el.textContent = 'Ready';
             }
         });
         
-        console.log('🎉 Data loading complete!');
         hideLoadingOverlay();
     } catch (error) {
-        console.error('❌ Error loading data:', error);
         
         // Initialize with empty data to prevent further errors
         allLeads = [];
@@ -409,28 +378,21 @@ async function loadData() {
 
 // Update dashboard statistics
 function updateDashboardStats() {
-    console.log('📈 updateDashboardStats called');
-    console.log('📊 summaryData:', summaryData);
-    console.log('📊 allLeads type:', typeof allLeads, 'isArray:', Array.isArray(allLeads), 'length:', allLeads?.length);
     
     const totalLeadsEl = document.getElementById('total-leads');
     if (totalLeadsEl) {
         totalLeadsEl.textContent = summaryData.total_leads?.toLocaleString() || '0';
-        console.log('✅ Updated total-leads:', totalLeadsEl.textContent);
     } else {
-        console.error('❌ total-leads element not found!');
     }
     
     // Ensure allLeads is an array before filtering
     const leadsArray = Array.isArray(allLeads) ? allLeads : [];
-    console.log('📋 leadsArray for stats:', leadsArray.length);
     
     // Calculate missing stats from leads data if not provided by API
     const goldmines = summaryData.goldmines ?? leadsArray.filter(l => l.priority === 'high' && (l.score || 0) >= 90).length;
     const highValue = summaryData.high_value ?? leadsArray.filter(l => (l.score || 0) >= 80).length;
     const perfectScores = summaryData.perfect_scores ?? leadsArray.filter(l => (l.score || 0) === 100).length;
     
-    console.log('📊 Calculated stats - Goldmines:', goldmines, 'HighValue:', highValue, 'Perfect:', perfectScores);
     
     const goldminesEl = document.getElementById('goldmines');
     const highValueEl = document.getElementById('high-value');
@@ -438,34 +400,25 @@ function updateDashboardStats() {
     
     if (goldminesEl) {
         goldminesEl.textContent = goldmines.toLocaleString();
-        console.log('✅ Updated goldmines:', goldminesEl.textContent);
     } else {
-        console.error('❌ goldmines element not found!');
     }
     
     if (highValueEl) {
         highValueEl.textContent = highValue.toLocaleString();
-        console.log('✅ Updated high-value:', highValueEl.textContent);
     } else {
-        console.error('❌ high-value element not found!');
     }
     
     if (perfectScoresEl) {
         perfectScoresEl.textContent = perfectScores.toLocaleString();
-        console.log('✅ Updated perfect-scores:', perfectScoresEl.textContent);
     } else {
-        console.error('❌ perfect-scores element not found!');
     }
 }
 
 // Populate filter dropdowns
 function populateFilterDropdowns() {
-    console.log('🔍 populateFilterDropdowns called');
-    console.log('📊 allLeads type:', typeof allLeads, 'isArray:', Array.isArray(allLeads), 'length:', allLeads?.length);
     
     // Ensure allLeads is an array before processing
     const leadsArray = Array.isArray(allLeads) ? allLeads : [];
-    console.log('📋 leadsArray length:', leadsArray.length);
     
     // Get unique states and cities from location field if state/city don't exist
     const states = [...new Set(leadsArray.map(lead => {
@@ -1337,7 +1290,6 @@ function showNotification(message) {
 
 // Show error message
 function showError(message) {
-    console.error(message);
     showNotification('Error: ' + message);
 }
 

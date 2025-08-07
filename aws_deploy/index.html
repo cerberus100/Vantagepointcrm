@@ -753,32 +753,25 @@
         // Authentication functions
         async function checkAuthentication() {
             const token = localStorage.getItem('token');
-            console.log('🔐 Checking authentication, token exists:', !!token);
             
             if (!token) {
-                console.log('❌ No token found, redirecting to login');
                 window.location.href = 'login.html';
                 return false;
             }
 
             try {
-                console.log('🔍 Verifying token with backend...');
                 // Verify token with backend
                 const response = await fetch(`${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.ME}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
                 });
-                
-                console.log('🔍 Auth response status:', response.status);
-                
+
                 if (!response.ok) {
-                    console.log('❌ Token validation failed:', response.status);
                     throw new Error('Token invalid');
                 }
                 
                 const user = await response.json();
-                console.log('✅ Authentication successful:', user.username, user.role);
                 
                 currentUser = user;
                 
@@ -792,20 +785,17 @@
                 try {
                     showUserManagementButtons();
                 } catch (buttonError) {
-                    console.error('Error showing user management buttons:', buttonError);
                 }
                 
                 // Load data
                 try {
                     await loadData();
                 } catch (dataError) {
-                    console.error('Error loading data:', dataError);
                 }
                 
                 return true;
                 
             } catch (error) {
-                console.error('🚨 Authentication failed:', error);
                 localStorage.removeItem('token');
                 window.location.href = 'login.html';
                 return false;
@@ -863,7 +853,6 @@
                 renderLeadsTable();
 
             } catch (error) {
-                console.error('❌ Failed to load data:', error);
                 allLeads = [];
                 summaryData = {};
                 
@@ -877,7 +866,6 @@
         }
 
         function updateDashboardStats() {
-            console.log('📊 Updating dashboard stats:', summaryData);
             
             // Update stats cards based on role and data
             const practicesSignedUp = summaryData.practices_signed_up || 0;
@@ -904,9 +892,7 @@
             if (currentUser && currentUser.role === 'agent' && summaryData.team_performance) {
                 const teamPerf = summaryData.team_performance;
                 const rank = summaryData.your_rank;
-                
-                console.log('🏆 Team Performance:', teamPerf, 'Your Rank:', rank);
-                
+
                 // Update team rank display
                 const rankElement = document.getElementById('team-rank-display');
                 if (rankElement) {
@@ -923,19 +909,15 @@
                 }
             }
 
-            console.log('✅ Dashboard stats updated');
         }
 
         function renderLeadsTable() {
             const tableBody = document.getElementById('leadsTable');
             
             if (!Array.isArray(allLeads)) {
-                console.error('❌ allLeads is not an array:', typeof allLeads, allLeads);
                 allLeads = [];
             }
-            
-            console.log('📊 Rendering', allLeads.length, 'leads');
-            
+
             if (allLeads.length === 0) {
                 tableBody.innerHTML = `
                     <tr><td colspan="11" class="text-center">No leads available</td></tr>
@@ -1011,7 +993,6 @@
                 document.getElementById('sendDocsBtn').disabled = true;
             }
             
-            console.log('✅ Selected lead:', leadId);
         }
 
         function canSendDocs(lead) {
@@ -1055,17 +1036,12 @@
             document.getElementById('editPriority').value = lead.priority || '';
             document.getElementById('editPtan').value = lead.ptan || '';
             document.getElementById('editEinTin').value = lead.ein_tin || '';
-            
-
 
             // Show modal
             const modal = new bootstrap.Modal(document.getElementById('editLeadModal'));
             modal.show();
-            
 
         }
-        
-
 
         async function saveLeadChanges() {
             const leadId = document.getElementById('editLeadId').value;
@@ -1086,8 +1062,6 @@
                 ptan: document.getElementById('editPtan').value,
                 ein_tin: document.getElementById('editEinTin').value
             };
-            
-
 
             try {
                 const token = localStorage.getItem('token');
@@ -1111,7 +1085,6 @@
                 alert('Lead updated successfully!');
                 loadData(); // Refresh data
             } catch (error) {
-                console.error('Failed to update lead:', error);
                 alert('Failed to update lead: ' + error.message);
             }
         }
@@ -1147,7 +1120,6 @@
                 alert(`✅ Documents sent successfully!\n\nEmail: ${result.email_used}\nExternal ID: ${result.external_user_id}`);
                 loadData(); // Refresh data
             } catch (error) {
-                console.error('Failed to send docs:', error);
                 alert(`❌ Failed to send docs: ${error.message}`);
             }
         }
@@ -1196,7 +1168,6 @@
                 // Search completed successfully
 
             } catch (error) {
-                console.error('❌ Search failed:', error);
                 alert(`Search failed: ${error.message}`);
             }
         }
@@ -1273,77 +1244,59 @@
                 alert('Lead created successfully!');
                 loadData(); // Refresh data
             } catch (error) {
-                console.error('Failed to create lead:', error);
                 alert('Failed to create lead: ' + error.message);
             }
         }
 
         // Show user management buttons based on role
         function showUserManagementButtons() {
-            console.log('🔍 showUserManagementButtons called');
-            console.log('👤 Current user:', currentUser);
             
             if (!currentUser) {
-                console.error('❌ No currentUser found - cannot show management buttons');
                 return;
             }
-            
-            console.log(`🎭 User role detected: ${currentUser.role}`);
-            
+
             const createUserBtn = document.getElementById('createUserBtn');
             const createAgentBtn = document.getElementById('createAgentBtn');
             
             if (!createUserBtn) {
-                console.error('❌ createUserBtn element not found!');
                 return;
             }
             if (!createAgentBtn) {
-                console.error('❌ createAgentBtn element not found!');
                 return;
             }
-            
-            console.log('✅ Found button elements, applying role-based visibility...');
-            
+
             if (currentUser.role === 'admin') {
-                console.log('👑 Admin role detected - showing Create User button');
                 createUserBtn.style.display = 'block';
                 createAgentBtn.style.display = 'none';
-                console.log('✅ Create User button should now be visible');
                 
                 // Show organizational structure for admins
                 try {
                 showOrganizationForAdmin();
                 } catch (e) {
-                    console.warn('showOrganizationForAdmin not ready:', e);
                 }
                 
                 // Show commission reports for admins and managers
                 try {
                     showCommissionReportsForAuthorized();
                 } catch (e) {
-                    console.warn('showCommissionReportsForAuthorized not ready:', e);
                 }
                 
                 // Show admin navigation buttons - CRITICAL FOR DEAL TRACKER
                 try {
                     showAdminButtons();
                 } catch (e) {
-                    console.warn('showAdminButtons not ready:', e);
                 }
                 
                 // BACKUP: Force show Deal Tracker buttons independently 
-                forceDealTrackerButtons();
+                
             } else if (currentUser.role === 'manager') {
-                console.log('👨‍💼 Manager role detected - showing Create Agent button');
                 createUserBtn.style.display = 'none';
                 createAgentBtn.style.display = 'block';
-                console.log('✅ Create Agent button should now be visible');
                 
                 // Show commission reports for managers too
                 try {
                     showCommissionReportsForAuthorized();
                 } catch (e) {
-                    console.warn('showCommissionReportsForAuthorized not ready:', e);
                 }
                 
                 // Show commission reports button for managers
@@ -1351,61 +1304,43 @@
                 if (commissionBtn) commissionBtn.style.display = 'inline-block';
                 
                 // BACKUP: Force show Deal Tracker button for managers too
-                forceDealTrackerButtons();
+                
             } else {
-                console.log('👤 Agent/other role detected - hiding all management buttons');
                 createUserBtn.style.display = 'none';
                 createAgentBtn.style.display = 'none';
             }
             
             // Verify final button states
-            console.log(`📊 Final button states:`);
-            console.log(`   Create User btn display: ${createUserBtn.style.display}`);
-            console.log(`   Create Agent btn display: ${createAgentBtn.style.display}`);
         }
 
         // Create User Modal Functions (Admin)
         function showCreateUserModal() {
-            console.log('🔍 showCreateUserModal() function called!');
-            console.log('👤 Current user when opening modal:', currentUser);
             
             try {
                 const modal = document.getElementById('createUserModal');
                 if (!modal) {
-                    console.error('❌ createUserModal element not found in DOM!');
                     alert('❌ Error: User creation form not found. Please refresh the page.');
                     return;
                 }
                 
-                console.log('✅ Found modal element, attempting to display...');
                 modal.style.display = 'block';
-                console.log('✅ Modal display set to block, should now be visible');
                 
-                console.log('📋 Loading managers for selection...');
                 loadManagersForSelection();
-                
-                console.log('🎉 Modal should now be fully open and functional');
-                
+
             } catch (error) {
-                console.error('❌ Error opening modal:', error);
-                console.error('❌ Error details:', error.stack);
                 alert(`❌ Error opening user creation form: ${error.message}`);
             }
         }
 
         function closeCreateUserModal() {
-            console.log('🔍 Closing Create User Modal...');
             try {
                 document.getElementById('createUserModal').style.display = 'none';
                 document.getElementById('createUserForm').reset();
-                console.log('✅ Modal closed successfully');
             } catch (error) {
-                console.error('❌ Error closing modal:', error);
             }
         }
 
         async function loadManagersForSelection() {
-            console.log('🔍 Loading managers for selection...');
             const managerSelect = document.getElementById('managerSelect');
             
             try {
@@ -1414,7 +1349,6 @@
                 managerSelect.disabled = true;
                 
                 const token = localStorage.getItem('token');
-                console.log('🔑 Token retrieved, making API call...');
                 
                 // Add timeout to prevent hanging
                 const controller = new AbortController();
@@ -1429,36 +1363,30 @@
                 });
                 
                 clearTimeout(timeoutId);
-                console.log(`📡 Managers API response: ${response.status}`);
 
                 managerSelect.innerHTML = '<option value="">Select Manager...</option>';
                 managerSelect.disabled = false;
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log(`📋 Loaded ${data.managers.length} managers`);
                     data.managers.forEach(manager => {
                         managerSelect.innerHTML += `<option value="${manager.id}">${manager.full_name} (${manager.username}) - ${manager.agent_count} agents</option>`;
                     });
                 } else {
-                    console.warn('Failed to load managers, using fallback');
                     managerSelect.innerHTML += '<option value="2">Sales Manager (manager1)</option>';
                 }
             } catch (error) {
-                console.error('❌ Error loading managers:', error);
                 managerSelect.innerHTML = '<option value="">Select Manager...</option>';
                 managerSelect.innerHTML += '<option value="2">Sales Manager (manager1)</option>';
                 managerSelect.disabled = false;
                 
                 if (error.name === 'AbortError') {
-                    console.error('⏰ Managers loading timed out');
                     alert('Loading managers timed out. Using fallback options.');
                 }
             }
         }
 
         async function createUser() {
-            console.log('🔍 Starting user creation...');
             
             // Get form elements for loading state
             const createButton = document.getElementById('createUserSubmitBtn');
@@ -1479,8 +1407,6 @@
                     manager_id: formData.get('manager_id') ? parseInt(formData.get('manager_id')) : null
                 };
 
-                console.log('👤 Creating user:', { ...userData, password: '[REDACTED]' });
-                
                 // Validate required fields
                 if (!userData.username || !userData.full_name || !userData.role) {
                     throw new Error('Please fill in all required fields');
@@ -1490,9 +1416,7 @@
                 if (!token) {
                     throw new Error('Authentication token not found. Please log in again.');
                 }
-                
-                console.log('📡 Making user creation API call...');
-                
+
                 // Add timeout to prevent hanging
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
@@ -1508,10 +1432,8 @@
                 });
                 
                 clearTimeout(timeoutId);
-                console.log(`📡 User creation API response: ${response.status}`);
 
                 const result = await response.json();
-                console.log('📊 User creation result:', result);
 
                 if (!response.ok) {
                     throw new Error(result.detail || `Server error: ${response.status}`);
@@ -1520,11 +1442,8 @@
                 // Success
                 closeCreateUserModal();
                 alert(`✅ ${userData.role.charAt(0).toUpperCase() + userData.role.slice(1)} '${userData.username}' created successfully!\n${result.leads_assigned ? `Assigned ${result.leads_assigned} leads.` : ''}`);
-                
-                console.log('✅ User created successfully');
 
             } catch (error) {
-                console.error('❌ User creation failed:', error);
                 
                 if (error.name === 'AbortError') {
                     alert('❌ User creation timed out. Please try again.');
@@ -1535,35 +1454,27 @@
                 // Reset button state
                 createButton.innerHTML = originalButtonText;
                 createButton.disabled = false;
-                console.log('🔄 User creation process completed');
             }
         }
 
         // Create Agent Modal Functions (Manager)
         function showCreateAgentModal() {
-            console.log('🔍 Opening Create Agent Modal...');
             try {
                 document.getElementById('createAgentModal').style.display = 'block';
-                console.log('✅ Agent modal displayed successfully');
             } catch (error) {
-                console.error('❌ Error opening agent modal:', error);
                 alert('Error opening agent creation form. Please try again.');
             }
         }
 
         function closeCreateAgentModal() {
-            console.log('🔍 Closing Create Agent Modal...');
             try {
                 document.getElementById('createAgentModal').style.display = 'none';
                 document.getElementById('createAgentForm').reset();
-                console.log('✅ Agent modal closed successfully');
             } catch (error) {
-                console.error('❌ Error closing agent modal:', error);
             }
         }
 
         async function createAgent() {
-            console.log('🔍 Starting agent creation...');
             
             // Get form elements for loading state
             const createButton = document.getElementById('createAgentSubmitBtn');
@@ -1584,8 +1495,6 @@
                     // manager_id will be set automatically by backend to current user
                 };
 
-                console.log('👨‍💼 Creating agent:', { ...agentData, password: '[REDACTED]' });
-                
                 // Validate required fields
                 if (!agentData.username || !agentData.full_name) {
                     throw new Error('Please fill in all required fields');
@@ -1595,9 +1504,7 @@
                 if (!token) {
                     throw new Error('Authentication token not found. Please log in again.');
                 }
-                
-                console.log('📡 Making agent creation API call...');
-                
+
                 // Add timeout to prevent hanging
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
@@ -1613,10 +1520,8 @@
                 });
                 
                 clearTimeout(timeoutId);
-                console.log(`📡 Agent creation API response: ${response.status}`);
 
                 const result = await response.json();
-                console.log('📊 Agent creation result:', result);
 
                 if (!response.ok) {
                     throw new Error(result.detail || `Server error: ${response.status}`);
@@ -1625,11 +1530,8 @@
                 // Success
                 closeCreateAgentModal();
                 alert(`✅ Agent '${agentData.username}' created successfully and assigned to your team!\nAssigned ${result.leads_assigned} leads to start with.`);
-                
-                console.log('✅ Agent created successfully');
 
             } catch (error) {
-                console.error('❌ Agent creation failed:', error);
                 
                 if (error.name === 'AbortError') {
                     alert('❌ Agent creation timed out. Please try again.');
@@ -1640,80 +1542,19 @@
                 // Reset button state
                 createButton.innerHTML = originalButtonText;
                 createButton.disabled = false;
-                console.log('🔄 Agent creation process completed');
             }
         }
 
         // Debug function to test modal functionality
-        function debugModalTest() {
-            console.log('🧪 MANUAL MODAL TEST');
-            console.log('='.repeat(50));
-            
-            // Test 1: Check if buttons exist
-            const createUserBtn = document.getElementById('createUserBtn');
-            const createAgentBtn = document.getElementById('createAgentBtn');
-            
-            console.log('🔍 Button Elements:');
-            console.log('   Create User Button:', createUserBtn);
-            console.log('   Create Agent Button:', createAgentBtn);
-            
-            if (createUserBtn) {
-                console.log(`   Create User Button display: ${createUserBtn.style.display}`);
-                console.log(`   Create User Button computed style:`, window.getComputedStyle(createUserBtn).display);
-            }
-            
-            // Test 2: Check if modal exists
-            const modal = document.getElementById('createUserModal');
-            console.log('🔍 Modal Element:', modal);
-            
-            if (modal) {
-                console.log(`   Modal display: ${modal.style.display}`);
-                console.log(`   Modal computed style:`, window.getComputedStyle(modal).display);
-            }
-            
-            // Test 3: Force show button
-            if (createUserBtn) {
-                console.log('🔧 Forcing Create User button to be visible...');
-                createUserBtn.style.display = 'block';
-                createUserBtn.style.visibility = 'visible';
-                createUserBtn.style.opacity = '1';
-                console.log('✅ Button forced visible');
-            }
-            
-            // Test 4: Check current user
-            console.log('👤 Current User:', currentUser);
-            
-            console.log('🧪 Manual test complete - try clicking Create User button now');
-        }
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 VantagePoint CRM Loading...');
-            
-            // Add debug button to page for testing
-            console.log('🧪 Adding debug test button...');
-            setTimeout(() => {
-                const header = document.querySelector('header .container-fluid');
-                if (header) {
-                    const debugBtn = document.createElement('button');
-                    debugBtn.innerHTML = '🧪 Debug Test';
-                    debugBtn.className = 'btn btn-warning';
-                    debugBtn.style.position = 'absolute';
-                    debugBtn.style.top = '10px';
-                    debugBtn.style.right = '10px';
-                    debugBtn.style.zIndex = '9999';
-                    debugBtn.onclick = debugModalTest;
-                    header.appendChild(debugBtn);
-                    console.log('✅ Debug button added to page');
-                }
-                    }, 1000);
-        
+
         // Initialize authentication when page loads
         (async function() {
             try {
                 await checkAuthentication();
             } catch (error) {
-                console.error('Failed to initialize authentication:', error);
                 window.location.href = 'login.html';
             }
         })();
@@ -1723,10 +1564,8 @@
         // ============================================
 
         async function loadOrganizationStructure() {
-            console.log('🏢 Loading organizational structure...');
             
             if (!currentUser || currentUser.role !== 'admin') {
-                console.log('❌ Only admins can view organizational structure');
                 return;
             }
 
@@ -1754,12 +1593,10 @@
                 }
 
                 const data = await response.json();
-                console.log('📊 Organization data loaded:', data);
                 
                 renderOrganizationTree(data);
 
             } catch (error) {
-                console.error('❌ Failed to load organization:', error);
                 orgTree.innerHTML = `
                     <div style="text-align: center; color: #e74c3c; padding: 40px;">
                         <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
@@ -1919,7 +1756,6 @@
         
         // Load Manager Sales Data
         async function loadManagerSales() {
-            console.log('📊 Loading manager sales data...');
             
             const container = document.getElementById('managerSalesContainer');
             
@@ -1945,12 +1781,10 @@
                 }
                 
                 const data = await response.json();
-                console.log('📊 Analytics data loaded:', data);
                 
                 renderManagerSales(data.analytics);
                 
             } catch (error) {
-                console.error('❌ Failed to load manager sales:', error);
                 container.innerHTML = `
                     <div style="text-align: center; color: #e74c3c; padding: 40px;">
                         <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
@@ -2131,20 +1965,15 @@
         
         // Show admin buttons based on role
         function showAdminButtons() {
-            console.log('🔍 showAdminButtons called, currentUser:', currentUser);
             if (currentUser && currentUser.role === 'admin') {
                 const commissionBtn = document.getElementById('commissionReportsBtn');
                 const managerBtn = document.getElementById('managerSalesBtn');
-                
-                console.log('📊 Found buttons:', { commissionBtn, managerBtn });
-                
+
                 if (commissionBtn) {
                     commissionBtn.style.display = 'inline-block';
-                    console.log('✅ Deal Tracker button shown');
                 }
                 if (managerBtn) {
                     managerBtn.style.display = 'inline-block';
-                    console.log('✅ Manager Performance button shown');
                 }
                 
                 // Also show the user filter for admin commission reports
@@ -2154,91 +1983,21 @@
                     loadUsersForCommissionFilter();
                 }
                 
-                console.log('✅ Admin Deal Tracker and Manager buttons displayed');
             } else {
-                console.log('❌ Not admin or no user:', currentUser?.role);
             }
         }
         
         // BACKUP FUNCTION: Force show Deal Tracker buttons (independent of other functions)
-        function forceDealTrackerButtons() {
-            console.log('🚀 forceDealTrackerButtons() called - ensuring Deal Tracker buttons appear');
-            
-            if (!currentUser) {
-                console.log('❌ No currentUser, cannot show Deal Tracker buttons');
-                return;
-            }
-            
-            console.log(`👤 User role: ${currentUser.role}`);
-            
-            // Force show Deal Tracker button for admin and manager
-            if (currentUser.role === 'admin' || currentUser.role === 'manager') {
-                const dealTrackerBtn = document.getElementById('commissionReportsBtn');
-                
-                if (dealTrackerBtn) {
-                    dealTrackerBtn.style.display = 'inline-block';
-                    dealTrackerBtn.style.visibility = 'visible';
-                    console.log('✅ DEAL TRACKER BUTTON FORCED TO SHOW');
-                } else {
-                    console.error('❌ commissionReportsBtn element not found in DOM!');
-                    // Try to find it by class or create it
-                    console.log('🔍 Searching for Deal Tracker button in DOM...');
-                    const allButtons = document.querySelectorAll('button');
-                    console.log(`Found ${allButtons.length} total buttons in page`);
-                }
-                
-                // For admin only, also show Manager Performance button
-                if (currentUser.role === 'admin') {
-                    const managerBtn = document.getElementById('managerSalesBtn');
-                    if (managerBtn) {
-                        managerBtn.style.display = 'inline-block';
-                        managerBtn.style.visibility = 'visible';
-                        console.log('✅ MANAGER PERFORMANCE BUTTON FORCED TO SHOW');
-                    } else {
-                        console.error('❌ managerSalesBtn element not found in DOM!');
-                    }
-                }
-            } else {
-                console.log('👤 Agent role - Deal Tracker buttons not applicable');
-            }
-        }
-        
-        // MANUAL DEBUG FUNCTION: Call this from console if buttons don't appear
-        function debugDealTrackerButtons() {
-            console.log('🔧 MANUAL DEBUG: Checking Deal Tracker button status');
-            console.log('Current user:', currentUser);
-            
-            const dealTrackerBtn = document.getElementById('commissionReportsBtn');
-            const managerBtn = document.getElementById('managerSalesBtn');
-            
-            console.log('Deal Tracker button element:', dealTrackerBtn);
-            console.log('Manager Performance button element:', managerBtn);
-            
-            if (dealTrackerBtn) {
-                console.log('Deal Tracker button current style:', {
-                    display: dealTrackerBtn.style.display,
-                    visibility: dealTrackerBtn.style.visibility,
-                    computed: window.getComputedStyle(dealTrackerBtn).display
-                });
-            }
-            
+
             if (managerBtn) {
-                console.log('Manager button current style:', {
-                    display: managerBtn.style.display,
-                    visibility: managerBtn.style.visibility,
-                    computed: window.getComputedStyle(managerBtn).display
-                });
             }
             
             // Force show them
-            console.log('🚀 Forcing buttons to show...');
-            forceDealTrackerButtons();
+            
         }
         
         // Make debug function available globally for console access
-        window.debugDealTrackerButtons = debugDealTrackerButtons;
-        window.forceDealTrackerButtons = forceDealTrackerButtons;
-        
+
         // Show commission reports for admins and managers
         function showCommissionReportsForAuthorized() {
             if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) {
@@ -2293,13 +2052,11 @@
                     });
                 }
             } catch (error) {
-                console.error('Failed to load users for filter:', error);
             }
         }
         
         // Load commission report
         async function loadCommissionReport() {
-            console.log('💰 Loading commission report...');
             
             const container = document.getElementById('commissionReportContainer');
             const startDate = document.getElementById('commissionStartDate').value;
@@ -2334,7 +2091,6 @@
                 }
                 
                 const data = await response.json();
-                console.log('💰 Commission report loaded:', data);
                 
                 // Store for export
                 window.lastCommissionReport = data;
@@ -2342,7 +2098,6 @@
                 renderCommissionReport(data);
                 
             } catch (error) {
-                console.error('❌ Failed to load commission report:', error);
                 container.innerHTML = `
                     <div style="text-align: center; color: #e74c3c; padding: 40px;">
                         <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
@@ -2531,7 +2286,6 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('📥 Commission report exported successfully');
         }
     });
     </script>

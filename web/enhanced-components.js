@@ -149,7 +149,6 @@ class ErrorHandler {
     }
 
     static handleAPIError(error, context = '') {
-        console.error(`API Error ${context}:`, error);
         
         let message = 'An unexpected error occurred. Please try again.';
         

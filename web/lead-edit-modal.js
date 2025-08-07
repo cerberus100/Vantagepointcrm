@@ -348,7 +348,6 @@ class LeadEditModal {
                 throw new Error(error.detail || 'Failed to update lead');
             }
         } catch (error) {
-            console.error('Error updating lead:', error);
             showNotification(`Failed to update lead: ${error.message}`, 'error');
         } finally {
             saveBtn.disabled = false;

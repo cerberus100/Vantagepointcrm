@@ -1,0 +1,24 @@
+{
+  "deployment_time": "2025-08-07T21:04:09.631449",
+  "security_fixes": [
+    "JWT secret now uses JWT_SECRET_KEY environment variable",
+    "Removed hardcoded 'your-secret-key'",
+    "Added os import for environment variable access",
+    "Fallback generates secure random secret if env var missing"
+  ],
+  "code_changes": {
+    "file": "lambda_function.py",
+    "changes": [
+      {
+        "line": 138,
+        "old": "secret = \"your-secret-key\"",
+        "new": "secret = os.environ.get('JWT_SECRET_KEY', 'vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])"
+      },
+      {
+        "line": 155,
+        "old": "secret = \"your-secret-key\"",
+        "new": "secret = os.environ.get('JWT_SECRET_KEY', 'vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])"
+      }
+    ]
+  }
+}

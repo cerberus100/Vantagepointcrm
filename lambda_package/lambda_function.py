@@ -16,6 +16,7 @@ from botocore.exceptions import ClientError
 from decimal import Decimal
 import logging
 from collections import defaultdict
+import os
 
 # Configure logging
 logger = logging.getLogger()
@@ -127,7 +128,7 @@ def create_jwt_token(username, role):
     payload = {
         "username": username,
         "role": role,
-        "exp": int(time.time()) + 3600  # 1 hour expiry
+        "exp": int(time.time()) + 86400  # 24 hour expiry (was 1 hour)
     }
     
     # Encode
@@ -135,7 +136,7 @@ def create_jwt_token(username, role):
     payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip('=')
     
     # Sign
-    secret = "your-secret-key"
+    secret = os.environ.get('JWT_SECRET_KEY', 'vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])
     signature = base64.urlsafe_b64encode(
         hmac.new(secret.encode(), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
     ).decode().rstrip('=')
@@ -152,7 +153,7 @@ def verify_jwt_token(token):
         header_b64, payload_b64, signature = parts
         
         # Verify signature
-        secret = "your-secret-key"
+        secret = os.environ.get('JWT_SECRET_KEY', 'vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])
         expected_signature = base64.urlsafe_b64encode(
             hmac.new(secret.encode(), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
         ).decode().rstrip('=')
