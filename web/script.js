@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
 });
 
-        main
 // Load data from backend API
 
 // Authentication functions

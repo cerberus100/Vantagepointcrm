@@ -132,7 +132,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None, request_id="
         
         # Check if limits exceeded
         if minute_count > minute_limit:
-            logger.warning("Rate limit exceeded for user {user_id}: {minute_count}/{minute_limit} per minute")
+            logger.warning(f"Rate limit exceeded for user {user_id}: {minute_count}/{minute_limit} per minute")
             return False, {
                 'limit_type': 'minute',
                 'limit': minute_limit,
@@ -141,7 +141,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None, request_id="
             }
         
         if hour_count > hour_limit:
-            logger.warning("Rate limit exceeded for user {user_id}: {hour_count}/{hour_limit} per hour")
+            logger.warning(f"Rate limit exceeded for user {user_id}: {hour_count}/{hour_limit} per hour")
             return False, {
                 'limit_type': 'hour',
                 'limit': hour_limit,
@@ -155,7 +155,7 @@ def check_rate_limit(user_id, user_role, endpoint, ip_address=None, request_id="
         }
         
     except Exception as e:
-        logger.error("Rate limit check failed: {e}")
+        logger.error(f"Rate limit check failed: {e}")
         # Fail open - allow request if rate limiting fails
         return True, {'error': 'Rate limit check failed'}
 
@@ -502,7 +502,8 @@ def create_jwt_token(username, role):
     payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip('=')
     
     # Sign
-    secret = os.environ.get('JWT_SECRET_KEY', 'vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])
+    # Use unified env var name for JWT secret
+    secret = os.environ.get('JWT_SECRET_KEY') or os.environ.get('JWT_SECRET') or ('vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])
     signature = base64.urlsafe_b64encode(
         hmac.new(secret.encode(), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
     ).decode().rstrip('=')
@@ -519,7 +520,7 @@ def verify_jwt_token(token):
         header_b64, payload_b64, signature = parts
         
         # Verify signature
-        secret = os.environ.get('JWT_SECRET_KEY', 'vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])
+        secret = os.environ.get('JWT_SECRET_KEY') or os.environ.get('JWT_SECRET') or ('vantagepoint-' + hashlib.sha256(os.urandom(32)).hexdigest()[:32])
         expected_signature = base64.urlsafe_b64encode(
             hmac.new(secret.encode(), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
         ).decode().rstrip('=')
@@ -665,11 +666,12 @@ def assign_leads_to_new_agent(agent_id, count=20):
 
 def initialize_default_users():
     """Initialize default users in DynamoDB if they don't exist"""
+    default_password = "admin123"
     default_users = [
         {
             "id": 1,
             "username": "admin",
-            "password": "admin123",  # Plain text for current system
+            "password_hash": hashlib.sha256(default_password.encode()).hexdigest(),
             "role": "admin",
             "email": "admin@vantagepoint.com",
             "full_name": "System Administrator",
@@ -749,7 +751,7 @@ def bulk_create_leads_optimized(leads_data, request_id="no-id"):
     """OPTIMIZED: Bulk lead creation using DynamoDB batch operations"""
     try:
         total_leads = len(leads_data)
-        logger.info("Starting optimized bulk creation of {total_leads} leads")
+        logger.info(f"Starting optimized bulk creation of {total_leads} leads")
         
         # Generate all IDs at once
         lead_ids = get_next_lead_ids_batch(total_leads)
@@ -796,10 +798,10 @@ def bulk_create_leads_optimized(leads_data, request_id="no-id"):
                         batch_writer.put_item(Item=lead)
                 
                 created_count += len(batch)
-                logger.info("Batch {batch_start//batch_size + 1}: Created {len(batch)} leads")
+                logger.info(f"Batch {batch_start//batch_size + 1}: Created {len(batch)} leads")
                 
             except Exception as batch_error:
-                logger.error("Error in batch {batch_start//batch_size + 1}: {batch_error}")
+                logger.error(f"Error in batch {batch_start//batch_size + 1}: {batch_error}")
                 # Add failed leads to list
                 for lead in batch:
                     failed_leads.append({
@@ -807,7 +809,7 @@ def bulk_create_leads_optimized(leads_data, request_id="no-id"):
                         'error': str(batch_error)
                     })
         
-        logger.info("Bulk creation completed: {created_count} created, {len(failed_leads)} failed")
+        logger.info(f"Bulk creation completed: {created_count} created, {len(failed_leads)} failed")
         
         return {
             'created_count': created_count,
@@ -817,7 +819,7 @@ def bulk_create_leads_optimized(leads_data, request_id="no-id"):
         }
         
     except Exception as e:
-        logger.error("Error in bulk_create_leads_optimized: {e}")
+        logger.error(f"Error in bulk_create_leads_optimized: {e}")
         raise e
 
 def get_next_lead_id():
@@ -969,10 +971,11 @@ def update_lead(lead_id, update_data, current_user=None, request_id="no-id"):
             old_lead = response.get('Item', {})
             
             # Auto-sale logic: if docs sent and status is disposed/closed_lost, convert to sale
-            if (update_data.get('status') in ['disposed', 'CLOSED_LOST'] and 
-                old_lead.get('docs_sent') and 
-                old_lead.get('status') != 'CLOSED_WON'):
-                
+            if (
+                update_data.get('status') in ['disposed', 'CLOSED_LOST']
+                and old_lead.get('docs_sent')
+                and old_lead.get('status') != 'CLOSED_WON'
+            ):
                 # Automatically convert to sale!
                 update_data['status'] = 'CLOSED_WON'
                 update_data['closed_by_user_id'] = current_user.get('id') if current_user else old_lead.get('docs_sent_by_id')
@@ -980,18 +983,17 @@ def update_lead(lead_id, update_data, current_user=None, request_id="no-id"):
                 update_data['closed_at'] = datetime.utcnow().isoformat()
                 update_data['auto_converted'] = True
                 update_data['conversion_reason'] = 'docs_sent_and_disposed'
-                logger.info("🎉 AUTO SALE: Lead {lead_id} converted to sale (docs sent + disposed)")
-                
+                logger.info(f"🎉 AUTO SALE: Lead {lead_id} converted to sale (docs sent + disposed)")
             # Manual sale tracking
             elif update_data.get('status') == 'CLOSED_WON' and current_user and old_lead.get('status') != 'CLOSED_WON':
                 # This is a manual sale! Track it for commission
                 update_data['closed_by_user_id'] = current_user.get('id')
                 update_data['closed_by_username'] = current_user.get('username')
                 update_data['closed_at'] = datetime.utcnow().isoformat()
-                logger.info("💰 Manual sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
+                logger.info(f"💰 Manual sale tracked: Lead {lead_id} closed by {current_user.get('username')}")
                 
         except Exception as e:
-            logger.warning("Could not check previous lead status for commission tracking: {e}")
+            logger.warning(f"Could not check previous lead status for commission tracking: {e}")
         
         # Build update expression
         update_expr = "SET "
@@ -1283,12 +1285,15 @@ def lambda_handler(event, context):
         
         print(f"Request: {method} {path}")
         
-        # Initialize default users on first run
-        initialize_default_users()
-        
-        # Health check
+        # Health check first to avoid any DB side effects
         if path == '/health' and method == 'GET':
             return create_response(200, {"status": "healthy", "service": "VantagePoint CRM", "optimized": True}, request_id, event)
+        
+        # Initialize default users on first run (do not fail request if this errors)
+        try:
+            initialize_default_users()
+        except Exception as init_err:
+            logger.warning(f"initialize_default_users skipped due to error: {init_err}")
         
         # Authentication endpoint
         if path == '/api/v1/auth/login' and method == 'POST':
@@ -1540,11 +1545,12 @@ def lambda_handler(event, context):
             except:
                 new_user_id = random.randint(100, 999)
             
-            # Create new user
+            # Create new user (store only password hash)
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
             new_user = {
                 "id": new_user_id,
                 "username": username,
-                "password": password,  # Store plain text for current system
+                "password_hash": password_hash,
                 "role": role,
                 "email": f"{username}@vantagepoint.com",
                 "full_name": new_user_data.get('full_name', username.title()),
@@ -1565,7 +1571,7 @@ def lambda_handler(event, context):
                 
                 response_data = {
                     "message": f"User {username} created successfully",
-                    "user": {k: v for k, v in new_user.items() if k != 'password'},
+                    "user": new_user,
                     "default_password": password if password == 'admin123' else None
                 }
                 
@@ -1633,11 +1639,14 @@ def lambda_handler(event, context):
                 
                 if update_lead(lead_id, update_data, current_user, request_id):
                     logger.info(f"📤 Docs sent successfully for lead {lead_id}")
+                    # Include fields expected by frontend for confirmation dialog
                     return create_response(200, {
                         "message": "Documents sent successfully",
                         "external_response": external_result.get('external_response'),
-                        "lead_updated": True
-                    })
+                        "lead_updated": True,
+                        "email_used": lead.get('email', ''),
+                        "external_user_id": (external_result.get('external_response') or {}).get('userId') if isinstance(external_result.get('external_response'), dict) else None
+                    }, request_id, event)
                 else:
                     return create_response(500, {"detail": "Failed to update lead after sending docs"}, request_id, event)
             else:
