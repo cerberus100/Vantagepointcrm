@@ -23,6 +23,7 @@ from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import uuid
+import re as _re
 
 # Configure logging
 logger = logging.getLogger()
@@ -629,14 +630,28 @@ def assign_leads_to_new_agent(agent_id, count=20):
             'TEST', 'UNKNOWN', 'PLACEHOLDER', 'UNAUTHORIZED', 'UPDATE', 'ATTEMPT',
             'FAKE', 'DEMO', 'SAMPLE', 'DEBUG', 'AGENT UPDATED', 'EXAMPLE'
         ]
-        
+        # Phone validity checker (10+ digits present)
+        def _has_valid_phone(lead: Dict[str, Any]) -> bool:
+            phone_fields = [lead.get('practice_phone'), lead.get('owner_phone'), lead.get('phone')]
+            for v in phone_fields:
+                if not v:
+                    continue
+                digits = _re.sub(r'\D', '', str(v))
+                if len(digits) >= 10:
+                    return True
+            return False
+
+        MIN_SCORE = 60
+
         quality_unassigned = [
             lead for lead in unassigned_leads
             if lead.get('status') != 'inactive_duplicate' and
             not any(pattern in (lead.get('practice_name', '') or '').upper() for pattern in fake_patterns) and
             not any(pattern in (lead.get('owner_name', '') or '').upper() for pattern in fake_patterns) and
             lead.get('practice_name') and  # Must have a practice name
-            lead.get('practice_name').strip() != ''  # Practice name can't be empty
+            lead.get('practice_name').strip() != '' and  # Practice name can't be empty
+            _has_valid_phone(lead) and  # Must be contactable by phone
+            int(lead.get('score', 0)) >= MIN_SCORE  # Enforce minimum score
         ]
         
         # Sort by score (highest first)
