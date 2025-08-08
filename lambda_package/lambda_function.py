@@ -366,31 +366,51 @@ def send_docs_to_external_api(lead_data, user_info, request_id):
             logger.error("VENDOR_TOKEN not found in environment variables")
             return {"success": False, "error": "Vendor token not configured"}
         
-        # Prepare the data for external API
+        # Prepare the data for external API using the CORRECT format
         api_data = {
-            # Add email at root level as API expects
             "email": lead_data.get('email', ''),
-            "vendorToken": vendor_token,  # Include token in payload
-            "practiceInfo": {
-                "practiceName": lead_data.get('practice_name', ''),
-                "ownerName": lead_data.get('owner_name', ''),
-                "contactEmail": lead_data.get('email', ''),
-                "phoneNumber": lead_data.get('practice_phone', ''),
-                "address": lead_data.get('address', ''),
+            "baaSigned": True,
+            "paSigned": True,
+            "facilityName": lead_data.get('practice_name', ''),
+            "selectedFacility": "Physician Office (11)",
+            "facilityAddress": {
+                "street": lead_data.get('address', ''),
                 "city": lead_data.get('city', ''),
                 "state": lead_data.get('state', ''),
-                "zipCode": lead_data.get('zip_code', ''),
-                "specialties": [lead_data.get('specialty', 'General Practice')],
-                "facilityType": lead_data.get('facility_type', 'Physician Office (11)'),
-                "ptan": lead_data.get('ptan', ''),
+                "zip": lead_data.get('zip_code', ''),
                 "npi": lead_data.get('npi', ''),
-                "einTin": lead_data.get('ein_tin', ''),
-                "baaSignedStatus": lead_data.get('baa_signed', True),
-                "paSignedStatus": lead_data.get('pa_signed', True)
+                "fax": lead_data.get('fax', lead_data.get('practice_phone', ''))
             },
-            "requestId": f"vantagepoint-{lead_data.get('id', 'unknown')}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-            "salesRep": user_info.get('full_name', user_info.get('username', 'VantagePoint Sales Team')),
-            "source": "VantagePoint CRM"
+            "facilityNPI": lead_data.get('npi', ''),
+            "facilityTIN": lead_data.get('ein_tin', ''),
+            "facilityPTAN": lead_data.get('ptan', ''),
+            "shippingContact": lead_data.get('owner_name', ''),
+            "primaryContactName": lead_data.get('owner_name', ''),
+            "primaryContactEmail": lead_data.get('email', ''),
+            "primaryContactPhone": lead_data.get('owner_phone', lead_data.get('practice_phone', '')),
+            "shippingAddresses": [
+                {
+                    "street": lead_data.get('address', ''),
+                    "city": lead_data.get('city', ''),
+                    "state": lead_data.get('state', ''),
+                    "zip": lead_data.get('zip_code', '')
+                }
+            ],
+            "salesRepresentative": user_info.get('full_name', user_info.get('username', 'VantagePoint Sales Team')),
+            "physicianInfo": {
+                "physicianFirstName": lead_data.get('owner_name', '').split()[0] if lead_data.get('owner_name') else '',
+                "physicianLastName": ' '.join(lead_data.get('owner_name', '').split()[1:]) if len(lead_data.get('owner_name', '').split()) > 1 else '',
+                "specialty": lead_data.get('specialty', ''),
+                "npi": lead_data.get('npi', ''),
+                "street": lead_data.get('address', ''),
+                "city": lead_data.get('city', ''),
+                "state": lead_data.get('state', ''),
+                "zip": lead_data.get('zip_code', ''),
+                "contactName": lead_data.get('owner_name', ''),
+                "fax": lead_data.get('fax', lead_data.get('practice_phone', '')),
+                "phone": lead_data.get('owner_phone', lead_data.get('practice_phone', ''))
+            },
+            "additionalPhysicians": []
         }
         
         # External API endpoint
@@ -398,8 +418,7 @@ def send_docs_to_external_api(lead_data, user_info, request_id):
         
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {vendor_token}',
-            'X-API-Key': vendor_token  # Some APIs expect the token in this header
+            'x-vendor-token': vendor_token  # Correct header name from documentation
         }
         
         logger.info(f"📡 Sending docs to external API for lead {lead_data.get('id')}")
