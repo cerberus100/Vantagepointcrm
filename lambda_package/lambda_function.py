@@ -334,6 +334,9 @@ def validate_input(data: Dict[str, Any], validation_type: str) -> tuple[bool, Op
             return False, "Username and role required"
         
         data['username'] = sanitize_string(data['username'], 'alphanumeric')
+        # Normalize role case to be forgiving for UI inputs
+        if 'role' in data and isinstance(data['role'], str):
+            data['role'] = data['role'].lower()
         if not re.match(patterns['username'], data['username']):
             return False, "Invalid username format"
         
@@ -1307,7 +1310,6 @@ def lambda_handler(event, context):
             
             user = get_user_by_username(username)
             # Check password hash
-            import hashlib
             password_hash = hashlib.sha256(password.encode()).hexdigest()
             if user and user.get('password_hash') == password_hash:
                 token = create_jwt_token(username, user.get('role', 'agent'))
@@ -1584,6 +1586,78 @@ def lambda_handler(event, context):
             except Exception as e:
                 return create_response(500, {"detail": sanitize_error_message(e, "create_user")}, request_id, event)
         
+        # GET /api/v1/managers - List managers for assignment
+        if path == '/api/v1/managers' and method == 'GET':
+            try:
+                all_users = get_all_users()
+                managers = [
+                    {
+                        'id': u.get('id'),
+                        'username': u.get('username'),
+                        'full_name': u.get('full_name', u.get('username'))
+                    }
+                    for u in all_users if (u.get('role') == 'manager')
+                ]
+                # Sort by name for UI
+                managers.sort(key=lambda m: (m.get('full_name') or m.get('username') or ''))
+                return create_response(200, { 'managers': managers }, request_id, event)
+            except Exception as e:
+                return create_response(500, {"detail": sanitize_error_message(e, "list_managers")}, request_id, event)
+
+        # ADMIN: Reset user password - PUT /api/v1/users/{id}/password
+        if path.startswith('/api/v1/users/') and path.endswith('/password') and method == 'PUT':
+            # Require admin role
+            if current_user.get('role') != 'admin':
+                return create_response(403, {"detail": "Admin access required"}, request_id, event)
+
+            # Extract user id from path
+            try:
+                target_user_id = int(path.split('/')[-2])
+            except Exception:
+                return create_response(400, {"detail": "Invalid user id in path"}, request_id, event)
+
+            # Parse and validate new password
+            new_password = (body_data or {}).get('new_password', '')
+            if not isinstance(new_password, str) or not (8 <= len(new_password) <= 128):
+                return create_response(400, {"detail": "Password must be 8-128 characters"}, request_id, event)
+
+            # Hash and update
+            try:
+                # Local import to avoid any scope issues in Lambda runtime
+                import hashlib as _hashlib
+                password_hash = _hashlib.sha256(new_password.encode()).hexdigest()
+
+                # Find the user item (scan by id to avoid key schema mismatch)
+                existing_user = None
+                try:
+                    scan_resp = users_table.scan(
+                        FilterExpression='id = :uid',
+                        ExpressionAttributeValues={':uid': target_user_id}
+                    )
+                    items = scan_resp.get('Items', [])
+                    if items:
+                        existing_user = items[0]
+                except Exception:
+                    existing_user = None
+
+                if not existing_user:
+                    return create_response(404, {"detail": "User not found"}, request_id, event)
+
+                # Update in-memory and write full item back
+                existing_user['password_hash'] = password_hash
+                if 'password' in existing_user:
+                    del existing_user['password']
+                existing_user['updated_at'] = datetime.utcnow().isoformat()
+
+                users_table.put_item(Item=existing_user)
+
+                return create_response(200, {
+                    "message": "Password updated successfully",
+                    "user_id": int(existing_user.get('id', target_user_id))
+                }, request_id, event)
+            except Exception as e:
+                return create_response(500, {"detail": sanitize_error_message(e, "reset_password")}, request_id, event)
+
         # MASTER ADMIN ANALYTICS ENDPOINT - NEW!
         if path == '/api/v1/admin/analytics' and method == 'GET':
             # Ensure admin access
