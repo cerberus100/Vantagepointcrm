@@ -1380,33 +1380,101 @@ def lambda_handler(event, context):
                 "name": current_user.get('name', '')
             }, request_id, event)
         
-        # GET /api/v1/leads - Get all leads with role-based filtering
+        # GET /api/v1/leads - Get leads with role-based filtering and pagination/sorting
         if path == '/api/v1/leads' and method == 'GET':
             all_leads = get_all_leads()
-            
+
             # Apply role-based filtering
             user_role = current_user.get('role')
             user_id = current_user.get('id')
-            
+
             if user_role == 'agent':
-                # Agents see only their assigned leads
-                filtered_leads = [lead for lead in all_leads if lead.get('assigned_user_id') == user_id]
+                filtered = [lead for lead in all_leads if lead.get('assigned_user_id') == user_id]
             elif user_role == 'manager':
-                # Managers see only their team's leads
-                # First get all agents under this manager
                 manager_agents = [u for u in get_all_users() if u.get('manager_id') == user_id]
                 agent_ids = [agent['id'] for agent in manager_agents]
-                # Include the manager's own ID as well
                 team_ids = agent_ids + [user_id]
-                # Filter leads to only those assigned to the team
-                filtered_leads = [lead for lead in all_leads if lead.get('assigned_user_id') in team_ids]
+                filtered = [lead for lead in all_leads if lead.get('assigned_user_id') in team_ids]
             elif user_role == 'admin':
-                # Admins see all leads
-                filtered_leads = all_leads
+                filtered = all_leads
             else:
-                filtered_leads = []
-            
-            return create_response(200, {"leads": filtered_leads}, request_id, event)
+                filtered = []
+
+            # Optional basic filters from query params
+            query_params = event.get('queryStringParameters', {}) or {}
+            status_filter = (query_params.get('status') or '').strip()
+            if status_filter:
+                filtered = [l for l in filtered if str(l.get('status','')).lower() == status_filter.lower()]
+
+            # Sorting: sort=score or sort=-score, sort=created_at, etc.
+            sort_param = (query_params.get('sort') or '').strip()  # e.g., '-score'
+            if sort_param:
+                reverse = sort_param.startswith('-')
+                key_name = sort_param[1:] if reverse else sort_param
+                def sort_key(l):
+                    v = l.get(key_name)
+                    try:
+                        return int(v)
+                    except Exception:
+                        return (v or '')
+                try:
+                    filtered.sort(key=sort_key, reverse=reverse)
+                except Exception:
+                    pass
+
+            # Pagination (defaults maintain current UI behavior)
+            try:
+                page = int(query_params.get('page', '1'))
+            except Exception:
+                page = 1
+            try:
+                page_size = int(query_params.get('page_size', '1000'))  # default large to preserve existing UI
+            except Exception:
+                page_size = 1000
+
+            total = len(filtered)
+            start = (page - 1) * page_size
+            end = start + page_size
+            page_items = filtered[start:end]
+            total_pages = (total + page_size - 1) // page_size if page_size > 0 else 1
+
+            return create_response(200, {
+                "leads": page_items,
+                "pagination": {
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages
+                }
+            }, request_id, event)
+
+        # GET /api/v1/leads/qa-report - Data quality quick report
+        if path == '/api/v1/leads/qa-report' and method == 'GET':
+            # Admins and managers can access; agents restricted
+            if current_user.get('role') not in ['admin', 'manager']:
+                return create_response(403, {"detail": "Unauthorized"}, request_id, event)
+            data = get_all_leads()
+            def has_phone(l):
+                import re as __re
+                for k in ['practice_phone','owner_phone','phone']:
+                    v = (l.get(k) or '')
+                    digits = __re.sub(r'\D','', str(v))
+                    if len(digits) >= 10:
+                        return True
+                return False
+            def has_name(l):
+                n = (l.get('practice_name') or l.get('owner_name') or l.get('company_name') or '').strip()
+                return bool(n)
+            missing_phone = sum(1 for l in data if not has_phone(l))
+            missing_name = sum(1 for l in data if not has_name(l))
+            low_score = sum(1 for l in data if int(l.get('score',0)) < 60)
+            return create_response(200, {
+                "total": len(data),
+                "missing_phone": missing_phone,
+                "missing_name": missing_name,
+                "low_score_below_60": low_score
+            }, request_id, event)
         
         # POST /api/v1/leads - Create single lead
         if path == '/api/v1/leads' and method == 'POST':
