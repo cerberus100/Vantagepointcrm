@@ -66,6 +66,14 @@ RATE_LIMIT_CONFIG = {
         '/api/v1/reports/commission': {
             'requests_per_minute': 10,
             'requests_per_hour': 100
+        },
+        '/api/v1/manager/assign-leads': {
+            'requests_per_minute': 60,
+            'requests_per_hour': 200
+        },
+        '/api/v1/admin/assign-extra-leads': {
+            'requests_per_minute': 30,
+            'requests_per_hour': 500
         }
     }
 }
@@ -1884,6 +1892,19 @@ def lambda_handler(event, context):
             if current_user.get('role') != 'manager':
                 return create_response(403, {"detail": "Manager access required"}, request_id, event)
 
+            # Enforce daily cap of 100 leads reassigned by a manager
+            try:
+                today_key = f"manager:{current_user.get('id')}:handoff:{datetime.utcnow().strftime('%Y-%m-%d')}"
+                usage = rate_limit_table.update_item(
+                    Key={'id': today_key},
+                    UpdateExpression='ADD reassigned :inc',
+                    ExpressionAttributeValues={':inc': 0},
+                    ReturnValues='ALL_NEW'
+                )
+                current_count = int((usage.get('Attributes') or {}).get('reassigned', 0))
+            except Exception:
+                current_count = 0
+
             try:
                 target_agent_id = int(body_data.get('agent_id'))
                 lead_ids = body_data.get('lead_ids', [])
@@ -1891,6 +1912,9 @@ def lambda_handler(event, context):
                     return create_response(400, {"detail": "lead_ids must be a non-empty array"}, request_id, event)
             except Exception:
                 return create_response(400, {"detail": "Invalid payload"}, request_id, event)
+
+            if current_count + len(lead_ids) > 100:
+                return create_response(429, {"detail": f"Daily limit exceeded. You can handoff up to 100 leads per day. Used: {current_count}"}, request_id, event)
 
             # Verify agent belongs to manager's team
             team_agents = [u for u in get_all_users() if u.get('manager_id') == current_user.get('id') and u.get('role') == 'agent']
@@ -1922,6 +1946,19 @@ def lambda_handler(event, context):
                     updated += 1
                 except Exception as e:
                     errors.append({"lead_id": lid, "error": str(e)})
+
+            # Increment daily usage counter
+            try:
+                rate_limit_table.update_item(
+                    Key={'id': today_key},
+                    UpdateExpression='ADD reassigned :num, ttl :ttladd',
+                    ExpressionAttributeValues={
+                        ':num': updated,
+                        ':ttladd': 0
+                    }
+                )
+            except Exception:
+                pass
 
             return create_response(200, {"reassigned": updated, "failed": len(errors), "errors": errors}, request_id, event)
 
