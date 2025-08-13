@@ -1858,7 +1858,7 @@ def lambda_handler(event, context):
                 }
             })
         
-        # ADMIN: Assign extra high-quality unassigned leads to an agent
+        # ADMIN: Assign extra high-quality unassigned leads to a user (agent or manager)
         if path == '/api/v1/admin/assign-extra-leads' and method == 'POST':
             if current_user.get('role') != 'admin':
                 return create_response(403, {"detail": "Admin access required"}, request_id, event)
@@ -1873,11 +1873,57 @@ def lambda_handler(event, context):
                 return create_response(400, {"detail": "count must be one of 10, 20, 50"}, request_id, event)
 
             target_user = get_user_by_id(target_agent_id)
-            if not target_user or target_user.get('role') != 'agent':
-                return create_response(404, {"detail": "Target agent not found"}, request_id, event)
+            if not target_user or target_user.get('role') not in ['agent','manager']:
+                return create_response(404, {"detail": "Target user not found or not eligible (must be agent or manager)"}, request_id, event)
 
             assigned = assign_extra_leads_to_agent(target_agent_id, count, request_id)
             return create_response(200, {"assigned": assigned, "requested": count, "agent_id": target_agent_id}, request_id, event)
+
+        # MANAGER: Reassign selected leads from own hopper to a team agent
+        if path == '/api/v1/manager/assign-leads' and method == 'POST':
+            if current_user.get('role') != 'manager':
+                return create_response(403, {"detail": "Manager access required"}, request_id, event)
+
+            try:
+                target_agent_id = int(body_data.get('agent_id'))
+                lead_ids = body_data.get('lead_ids', [])
+                if not isinstance(lead_ids, list) or not lead_ids:
+                    return create_response(400, {"detail": "lead_ids must be a non-empty array"}, request_id, event)
+            except Exception:
+                return create_response(400, {"detail": "Invalid payload"}, request_id, event)
+
+            # Verify agent belongs to manager's team
+            team_agents = [u for u in get_all_users() if u.get('manager_id') == current_user.get('id') and u.get('role') == 'agent']
+            team_agent_ids = {int(a.get('id')) for a in team_agents}
+            if target_agent_id not in team_agent_ids:
+                return create_response(403, {"detail": "Target agent is not in your team"}, request_id, event)
+
+            # Reassign leads only if currently assigned to this manager
+            updated = 0
+            errors = []
+            for lid in lead_ids:
+                try:
+                    lid_int = int(lid)
+                    lead = get_lead_by_id(lid_int)
+                    if not lead:
+                        errors.append({"lead_id": lid, "error": "not_found"})
+                        continue
+                    if int(lead.get('assigned_user_id') or 0) != int(current_user.get('id')):
+                        errors.append({"lead_id": lid, "error": "not_in_manager_hopper"})
+                        continue
+                    leads_table.update_item(
+                        Key={'id': lid_int},
+                        UpdateExpression='SET assigned_user_id = :agent_id, updated_at = :ts',
+                        ExpressionAttributeValues={
+                            ':agent_id': target_agent_id,
+                            ':ts': datetime.utcnow().isoformat()
+                        }
+                    )
+                    updated += 1
+                except Exception as e:
+                    errors.append({"lead_id": lid, "error": str(e)})
+
+            return create_response(200, {"reassigned": updated, "failed": len(errors), "errors": errors}, request_id, event)
 
         
         # Send docs endpoint - POST /api/v1/leads/{id}/send-docs

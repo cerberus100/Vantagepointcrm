@@ -1317,10 +1317,13 @@
                         <td>${a.full_name || a.username}</td>
                         <td>${a.id}</td>
                         <td>${a.manager_name || ''}</td>
-                        <td style=\"white-space:nowrap\">
-                            <button class=\"btn btn-sm btn-outline-primary\" onclick=\"assignExtraQuick(${a.id},10)\">+10</button>
-                            <button class=\"btn btn-sm btn-outline-primary ms-1\" onclick=\"assignExtraQuick(${a.id},20)\">+20</button>
-                            <button class=\"btn btn-sm btn-outline-primary ms-1\" onclick=\"assignExtraQuick(${a.id},50)\">+50</button>
+                        <td style=\"white-space:nowrap\"> 
+                            <div class=\"btn-group\">
+                              <button class=\"btn btn-sm btn-outline-primary\" onclick=\"assignExtraQuick(${a.id},10)\">+10</button>
+                              <button class=\"btn btn-sm btn-outline-primary\" onclick=\"assignExtraQuick(${a.id},20)\">+20</button>
+                              <button class=\"btn btn-sm btn-outline-primary\" onclick=\"assignExtraQuick(${a.id},50)\">+50</button>
+                            </div>
+                            <button class=\"btn btn-sm btn-primary ms-2\" title=\"Reassign selected leads from your hopper to this agent\" onclick=\"managerAssignSelectedTo(${a.id})\">Send Selected</button>
                         </td>
                     </tr>`).join('');
                 return `
@@ -1351,6 +1354,31 @@
                 loadData();
             } catch (e) {
                 alert(`Assign failed: ${e.message}`);
+            }
+        }
+
+        // Manager action: reassign selected leads from manager hopper to an agent
+        async function managerAssignSelectedTo(agentId) {
+            try {
+                const selected = Array.from(document.querySelectorAll('input[type="checkbox"][data-lead-id], input[type="radio"][data-lead-id], input[name^="lead-select-"]:checked'))
+                    .map(el => parseInt(el.dataset.leadId || el.value))
+                    .filter(Boolean);
+                if (!selected.length) {
+                    alert('Please select at least one lead (use the Select column).');
+                    return;
+                }
+                const token = localStorage.getItem('token');
+                const resp = await fetch(`${CONFIG.API_BASE_URL}/api/v1/manager/assign-leads`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent_id: agentId, lead_ids: selected })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Failed to reassign');
+                alert(`Reassigned ${data.reassigned} lead(s). Failed: ${data.failed}`);
+                loadData();
+            } catch (e) {
+                alert(`Reassign failed: ${e.message}`);
             }
         }
 
