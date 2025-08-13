@@ -1390,8 +1390,16 @@
                 // Show admin navigation buttons - CRITICAL FOR DEAL TRACKER
                 try {
                     showAdminButtons();
-                } catch (e) {
-                }
+                } catch (e) {}
+                // Hard fallback: force-show admin widgets if still hidden
+                try {
+                    var cr = document.getElementById('commissionReportsBtn');
+                    if (cr && cr.style) cr.style.display = 'inline-block';
+                    var ae = document.getElementById('assignExtraLeadsBtn');
+                    if (ae && ae.style) ae.style.display = 'inline-block';
+                    var ov = document.getElementById('orgViewBtn');
+                    if (ov && ov.style) ov.style.display = 'inline-block';
+                } catch (e) {}
                 
                 // BACKUP: Force show Deal Tracker buttons independently 
                 
