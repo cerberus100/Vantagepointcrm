@@ -2008,6 +2008,10 @@
                 if (managerBtn) {
                     managerBtn.style.display = 'inline-block';
                 }
+                const assignBtn = document.getElementById('assignExtraLeadsBtn');
+                if (assignBtn) {
+                    assignBtn.style.display = 'inline-block';
+                }
                 
                 // Also show the user filter for admin commission reports
                 const userFilter = document.getElementById('commissionUserFilter');
@@ -2017,6 +2021,63 @@
                 }
                 
             } else {
+            }
+        }
+
+        async function openAssignExtraLeadsModal() {
+            try {
+                const token = localStorage.getItem('token');
+                const resp = await fetch(`${CONFIG.API_BASE_URL}/api/v1/users?role=agent`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const agents = data.users || [];
+                    let select = document.getElementById('assignAgentIdSelect');
+                    if (!select) {
+                        const holder = document.createElement('select');
+                        holder.className = 'form-control';
+                        holder.id = 'assignAgentIdSelect';
+                        const input = document.getElementById('assignAgentId');
+                        if (input && input.parentNode) input.parentNode.replaceChild(holder, input);
+                        select = holder;
+                    }
+                    select.innerHTML = '<option value="">Select Agent...</option>';
+                    agents.forEach(a => {
+                        const label = `${a.full_name || a.username} (ID: ${a.id}${a.manager_name ? ", Mgr: " + a.manager_name : ''})`;
+                        const opt = document.createElement('option');
+                        opt.value = a.id;
+                        opt.textContent = label;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (e) {}
+            const modal = new bootstrap.Modal(document.getElementById('assignExtraLeadsModal'));
+            modal.show();
+        }
+
+        async function submitAssignExtraLeads(event) {
+            event.preventDefault();
+            const agentId = parseInt((document.getElementById('assignAgentIdSelect') || {}).value || 0);
+            const count = parseInt(document.getElementById('assignCount').value);
+            if (!agentId || ![10,20,50].includes(count)) {
+                alert('Please select a valid agent and count (10, 20, or 50).');
+                return;
+            }
+            try {
+                const token = localStorage.getItem('token');
+                const resp = await fetch(`${CONFIG.API_BASE_URL}/api/v1/admin/assign-extra-leads`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent_id: agentId, count })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Failed to assign leads');
+                bootstrap.Modal.getInstance(document.getElementById('assignExtraLeadsModal')).hide();
+                alert(`Assigned ${data.assigned} of ${data.requested} leads to agent ${data.agent_id}`);
+                loadData();
+            } catch (e) {
+                alert(`Assign failed: ${e.message}`);
             }
         }
         
@@ -2512,6 +2573,9 @@
                         </button>
                         <button class="btn-primary" onclick="showCommissionReports()" id="commissionReportsBtn" style="display: none;">
                             <i class="fas fa-bullseye"></i> Deal Tracker
+                        </button>
+                        <button class="btn-warning" id="assignExtraLeadsBtn" style="display:none;" onclick="openAssignExtraLeadsModal()">
+                            <i class="fas fa-plus-circle"></i> Assign Extra Leads
                         </button>
                         <button class="btn-primary" onclick="showManagerSales()" id="managerSalesBtn" style="display: none;">
                             <i class="fas fa-trophy"></i> Manager Performance

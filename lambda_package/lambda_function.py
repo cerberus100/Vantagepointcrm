@@ -682,6 +682,60 @@ def assign_leads_to_new_agent(agent_id, count=20):
         print(f"❌ Error in assign_leads_to_new_agent: {e}")
         return 0
 
+def assign_extra_leads_to_agent(agent_id: int, count: int, request_id: str = "no-id") -> int:
+    """Assign additional high-quality unassigned leads to an existing agent.
+    Uses the same quality filters as assign_leads_to_new_agent.
+    """
+    try:
+        response = leads_table.scan()
+        all_leads = response.get('Items', [])
+        unassigned = [
+            lead for lead in all_leads
+            if (not lead.get('assigned_user_id') or lead.get('assigned_user_id') == 'null')
+            and lead.get('status') not in ['CLOSED_WON', 'CLOSED_LOST', 'disposed', 'sold']
+        ]
+
+        def _has_valid_phone(lead: Dict[str, Any]) -> bool:
+            phone_fields = [lead.get('practice_phone'), lead.get('owner_phone'), lead.get('phone')]
+            for v in phone_fields:
+                if not v:
+                    continue
+                digits = _re.sub(r'\D', '', str(v))
+                if len(digits) >= 10:
+                    return True
+            return False
+
+        fake_patterns = ['TEST','UNKNOWN','PLACEHOLDER','UNAUTHORIZED','UPDATE','ATTEMPT','FAKE','DEMO','SAMPLE','DEBUG','AGENT UPDATED','EXAMPLE']
+        quality = [
+            lead for lead in unassigned
+            if lead.get('status') != 'inactive_duplicate' and
+               not any(p in (lead.get('practice_name','') or '').upper() for p in fake_patterns) and
+               not any(p in (lead.get('owner_name','') or '').upper() for p in fake_patterns) and
+               lead.get('practice_name') and lead.get('practice_name').strip() != '' and
+               _has_valid_phone(lead) and int(lead.get('score',0)) >= 60
+        ]
+        quality.sort(key=lambda x: x.get('score', 0), reverse=True)
+
+        assigned = 0
+        for lead in quality[:max(0, int(count))]:
+            try:
+                leads_table.update_item(
+                    Key={'id': int(lead['id'])},
+                    UpdateExpression='SET assigned_user_id = :agent_id, updated_at = :ts',
+                    ExpressionAttributeValues={
+                        ':agent_id': int(agent_id),
+                        ':ts': datetime.utcnow().isoformat()
+                    }
+                )
+                assigned += 1
+            except Exception as e:
+                print(f"❌ Failed to assign lead {lead.get('id')}: {e}")
+                continue
+        return assigned
+    except Exception as e:
+        print(f"❌ Error in assign_extra_leads_to_agent: {e}")
+        return 0
+
 def initialize_default_users():
     """Initialize default users in DynamoDB if they don't exist"""
     default_password = "admin123"
@@ -1668,6 +1722,50 @@ def lambda_handler(event, context):
                 
             except Exception as e:
                 return create_response(500, {"detail": sanitize_error_message(e, "create_user")}, request_id, event)
+
+        # GET /api/v1/users - List users (admin sees all, manager sees team + self)
+        if path == '/api/v1/users' and method == 'GET':
+            if current_user.get('role') not in ['admin', 'manager']:
+                return create_response(403, {"detail": "Unauthorized"}, request_id, event)
+
+            query_params = event.get('queryStringParameters', {}) or {}
+            role_filter = (query_params.get('role') or '').lower()  # e.g., 'agent'
+
+            users = get_all_users()
+
+            # Scope for managers
+            if current_user.get('role') == 'manager':
+                manager_id = current_user.get('id')
+                team_users = [u for u in users if (u.get('manager_id') == manager_id) or (u.get('id') == manager_id)]
+                users = team_users
+
+            # Optional role filter
+            if role_filter in ['admin','manager','agent']:
+                users = [u for u in users if (u.get('role') or '').lower() == role_filter]
+
+            # Attach manager name where applicable for UI context
+            id_to_user = {int(u.get('id')): u for u in users if 'id' in u}
+            def _manager_name(u):
+                mid = u.get('manager_id')
+                if mid and int(mid) in id_to_user:
+                    m = id_to_user[int(mid)]
+                    return m.get('full_name') or m.get('username')
+                return None
+            response_users = []
+            for u in users:
+                response_users.append({
+                    'id': int(u.get('id')) if u.get('id') is not None else None,
+                    'username': u.get('username'),
+                    'full_name': u.get('full_name', u.get('username')),
+                    'role': u.get('role'),
+                    'manager_id': u.get('manager_id'),
+                    'manager_name': _manager_name(u)
+                })
+
+            # Sort for convenience
+            response_users.sort(key=lambda x: (x.get('role') != 'agent', (x.get('full_name') or x.get('username') or '')))
+
+            return create_response(200, { 'users': response_users }, request_id, event)
         
         # GET /api/v1/managers - List managers for assignment
         if path == '/api/v1/managers' and method == 'GET':
@@ -1760,7 +1858,27 @@ def lambda_handler(event, context):
                 }
             })
         
-        
+        # ADMIN: Assign extra high-quality unassigned leads to an agent
+        if path == '/api/v1/admin/assign-extra-leads' and method == 'POST':
+            if current_user.get('role') != 'admin':
+                return create_response(403, {"detail": "Admin access required"}, request_id, event)
+
+            try:
+                target_agent_id = int(body_data.get('agent_id'))
+                count = int(body_data.get('count', 0))
+            except Exception:
+                return create_response(400, {"detail": "agent_id and count must be integers"}, request_id, event)
+
+            if count not in [10, 20, 50]:
+                return create_response(400, {"detail": "count must be one of 10, 20, 50"}, request_id, event)
+
+            target_user = get_user_by_id(target_agent_id)
+            if not target_user or target_user.get('role') != 'agent':
+                return create_response(404, {"detail": "Target agent not found"}, request_id, event)
+
+            assigned = assign_extra_leads_to_agent(target_agent_id, count, request_id)
+            return create_response(200, {"assigned": assigned, "requested": count, "agent_id": target_agent_id}, request_id, event)
+
         
         # Send docs endpoint - POST /api/v1/leads/{id}/send-docs
         if path.startswith('/api/v1/leads/') and path.endswith('/send-docs') and method == 'POST':
