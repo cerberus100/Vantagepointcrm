@@ -1062,7 +1062,7 @@
             document.getElementById('editState').value = lead.state || '';
             document.getElementById('editZipCode').value = lead.zip_code || '';
             document.getElementById('editSpecialty').value = lead.specialty || '';
-            document.getElementById('editStatus').value = lead.status || '';
+            document.getElementById('editStatus').value = (lead.status || '').toUpperCase();
             document.getElementById('editPriority').value = lead.priority || '';
             document.getElementById('editPtan').value = lead.ptan || '';
             document.getElementById('editEinTin').value = lead.ein_tin || '';
@@ -1077,6 +1077,14 @@
             const leadId = document.getElementById('editLeadId').value;
             const status = document.getElementById('editStatus').value;
             
+            // Normalize commonly used agent dispositions to backend enum
+            const statusMap = {
+                'APPOINTMENT_SET': 'qualified',
+                'DOCS_SENT': 'contacted',
+                'NOT_INTERESTED': 'CLOSED_LOST'
+            };
+            const normalizedStatus = statusMap[status] || status;
+            
             const updatedLead = {
                 practice_name: document.getElementById('editPracticeName').value,
                 owner_name: document.getElementById('editOwnerName').value,
@@ -1087,7 +1095,7 @@
                 state: document.getElementById('editState').value,
                 zip_code: document.getElementById('editZipCode').value,
                 specialty: document.getElementById('editSpecialty').value,
-                status: status,
+                status: normalizedStatus,
                 priority: document.getElementById('editPriority').value,
                 ptan: document.getElementById('editPtan').value,
                 ein_tin: document.getElementById('editEinTin').value
@@ -2717,7 +2725,10 @@
                                     <option value="NEW">New</option>
                                     <option value="CONTACTED">Contacted</option>
                                     <option value="QUALIFIED">Qualified</option>
-                                    <option value="CLOSED_WON">Closed Won (Sale)</option>
+                                    <option value="APPOINTMENT_SET">Appointment Set</option>
+                                    <option value="DOCS_SENT">Docs Sent</option>
+                                    <option value="CLOSED_WON">Client Signed Up</option>
+                                    <option value="NOT_INTERESTED">Not Interested</option>
                                     <option value="CLOSED_LOST">Closed Lost</option>
                                 </select>
                             </div>

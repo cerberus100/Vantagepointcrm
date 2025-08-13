@@ -1073,6 +1073,12 @@
         async function saveLeadChanges() {
             const leadId = document.getElementById('editLeadId').value;
             const status = document.getElementById('editStatus').value;
+            const statusMap = {
+                'APPOINTMENT_SET': 'qualified',
+                'DOCS_SENT': 'contacted',
+                'NOT_INTERESTED': 'CLOSED_LOST'
+            };
+            const normalizedStatus = statusMap[status] || status;
             
             const updatedLead = {
                 practice_name: document.getElementById('editPracticeName').value,
@@ -1084,7 +1090,7 @@
                 state: document.getElementById('editState').value,
                 zip_code: document.getElementById('editZipCode').value,
                 specialty: document.getElementById('editSpecialty').value,
-                status: status,
+                status: normalizedStatus,
                 priority: document.getElementById('editPriority').value,
                 ptan: document.getElementById('editPtan').value,
                 ein_tin: document.getElementById('editEinTin').value
@@ -2714,7 +2720,10 @@
                                     <option value="NEW">New</option>
                                     <option value="CONTACTED">Contacted</option>
                                     <option value="QUALIFIED">Qualified</option>
-                                    <option value="CLOSED_WON">Closed Won (Sale)</option>
+                                    <option value="APPOINTMENT_SET">Appointment Set</option>
+                                    <option value="DOCS_SENT">Docs Sent</option>
+                                    <option value="CLOSED_WON">Client Signed Up</option>
+                                    <option value="NOT_INTERESTED">Not Interested</option>
                                     <option value="CLOSED_LOST">Closed Lost</option>
                                 </select>
                             </div>

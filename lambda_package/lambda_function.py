@@ -239,7 +239,7 @@ def validate_input(data: Dict[str, Any], validation_type: str) -> tuple[bool, Op
         'npi': r'^\d{10}$',
         'ein': r'^\d{2}-?\d{7}$',
         'state': r'^[A-Z]{2}$',
-        'status': r'^(new|contacted|qualified|closed_won|closed_lost|disposed|sold|NEW|CONTACTED|QUALIFIED|CLOSED_WON|CLOSED_LOST)$',
+        'status': r'^(new|contacted|qualified|appointment_set|not_interested|docs_sent|closed_won|closed_lost|disposed|sold|NEW|CONTACTED|QUALIFIED|APPOINTMENT_SET|NOT_INTERESTED|DOCS_SENT|CLOSED_WON|CLOSED_LOST)$',
         'role': r'^(admin|manager|agent)$'
     }
     
