@@ -1922,6 +1922,23 @@ def lambda_handler(event, context):
             if target_agent_id not in team_agent_ids:
                 return create_response(403, {"detail": "Target agent is not in your team"}, request_id, event)
 
+            # Enforce per-agent daily cap of 20 handoffs from this manager
+            try:
+                pair_key = f"manager:{current_user.get('id')}:agent:{target_agent_id}:handoff:{datetime.utcnow().strftime('%Y-%m-%d')}"
+                pair_usage = rate_limit_table.update_item(
+                    Key={'id': pair_key},
+                    UpdateExpression='ADD reassigned :inc',
+                    ExpressionAttributeValues={':inc': 0},
+                    ReturnValues='ALL_NEW'
+                )
+                current_pair = int((pair_usage.get('Attributes') or {}).get('reassigned', 0))
+            except Exception:
+                current_pair = 0
+
+            if current_pair + len(lead_ids) > 20:
+                remaining = max(0, 20 - current_pair)
+                return create_response(429, {"detail": f"Per-agent daily limit is 20 extra leads. Remaining for this agent today: {remaining}"}, request_id, event)
+
             # Reassign leads only if currently assigned to this manager
             updated = 0
             errors = []
@@ -1947,10 +1964,18 @@ def lambda_handler(event, context):
                 except Exception as e:
                     errors.append({"lead_id": lid, "error": str(e)})
 
-            # Increment daily usage counter
+            # Increment daily usage counters (overall and per-agent)
             try:
                 rate_limit_table.update_item(
                     Key={'id': today_key},
+                    UpdateExpression='ADD reassigned :num, ttl :ttladd',
+                    ExpressionAttributeValues={
+                        ':num': updated,
+                        ':ttladd': 0
+                    }
+                )
+                rate_limit_table.update_item(
+                    Key={'id': pair_key},
                     UpdateExpression='ADD reassigned :num, ttl :ttladd',
                     ExpressionAttributeValues={
                         ':num': updated,
