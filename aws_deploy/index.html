@@ -1281,6 +1281,79 @@
             }
         }
 
+        async function openOrganizationModal() {
+            const modal = new bootstrap.Modal(document.getElementById('organizationModal'));
+            const body = document.getElementById('organizationBody');
+            body.innerHTML = '<div class="text-muted">Loading organization...</div>';
+            try {
+                const token = localStorage.getItem('token');
+                const resp = await fetch(`${CONFIG.API_BASE_URL}/api/v1/users`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Failed to load users');
+                renderOrganizationList(data.users || []);
+            } catch (e) {
+                body.innerHTML = `<div class="text-danger">${e.message}</div>`;
+            }
+            modal.show();
+        }
+
+        function renderOrganizationList(users) {
+            const body = document.getElementById('organizationBody');
+            const managers = users.filter(u => u.role === 'manager');
+            const agents = users.filter(u => u.role === 'agent');
+            const byManager = {};
+            managers.forEach(m => { byManager[m.id] = { manager: m, agents: [] }; });
+            agents.forEach(a => {
+                const mid = a.manager_id || 0;
+                if (!byManager[mid]) byManager[mid] = { manager: { id: mid, full_name: a.manager_name || 'Unassigned Manager' }, agents: [] };
+                byManager[mid].agents.push(a);
+            });
+            const sections = Object.values(byManager).map(group => {
+                const mgrLabel = `${group.manager.full_name || group.manager.username || 'Manager'} (ID: ${group.manager.id || 'N/A'})`;
+                const rows = group.agents.map(a => `
+                    <tr>
+                        <td>${a.full_name || a.username}</td>
+                        <td>${a.id}</td>
+                        <td>${a.manager_name || ''}</td>
+                        <td style=\"white-space:nowrap\">
+                            <button class=\"btn btn-sm btn-outline-primary\" onclick=\"assignExtraQuick(${a.id},10)\">+10</button>
+                            <button class=\"btn btn-sm btn-outline-primary ms-1\" onclick=\"assignExtraQuick(${a.id},20)\">+20</button>
+                            <button class=\"btn btn-sm btn-outline-primary ms-1\" onclick=\"assignExtraQuick(${a.id},50)\">+50</button>
+                        </td>
+                    </tr>`).join('');
+                return `
+                    <div class=\"mb-3\">
+                        <div style=\"font-weight:600; margin-bottom:6px;\">${mgrLabel}</div>
+                        <div class=\"table-responsive\">
+                          <table class=\"table table-sm\">
+                            <thead><tr><th>Agent</th><th>ID</th><th>Manager</th><th>Actions</th></tr></thead>
+                            <tbody>${rows || '<tr><td colspan="4" class="text-muted">No agents</td></tr>'}</tbody>
+                          </table>
+                        </div>
+                    </div>`;
+            }).join('');
+            body.innerHTML = sections || '<div class="text-muted">No users found.</div>';
+        }
+
+        async function assignExtraQuick(agentId, count) {
+            try {
+                const token = localStorage.getItem('token');
+                const resp = await fetch(`${CONFIG.API_BASE_URL}/api/v1/admin/assign-extra-leads`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent_id: agentId, count })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Failed to assign');
+                alert(`Assigned ${data.assigned}/${data.requested} to agent ${data.agent_id}`);
+                loadData();
+            } catch (e) {
+                alert(`Assign failed: ${e.message}`);
+            }
+        }
+
         // Show user management buttons based on role
         function showUserManagementButtons() {
             
@@ -2012,6 +2085,10 @@
                 if (assignBtn) {
                     assignBtn.style.display = 'inline-block';
                 }
+                const orgBtn = document.getElementById('orgViewBtn');
+                if (orgBtn) {
+                    orgBtn.style.display = 'inline-block';
+                }
                 
                 // Also show the user filter for admin commission reports
                 const userFilter = document.getElementById('commissionUserFilter');
@@ -2577,6 +2654,9 @@
                         <button class="btn-warning" id="assignExtraLeadsBtn" style="display:none;" onclick="openAssignExtraLeadsModal()">
                             <i class="fas fa-plus-circle"></i> Assign Extra Leads
                         </button>
+                        <button class="btn-info" id="orgViewBtn" style="display:none;" onclick="openOrganizationModal()">
+                            <i class="fas fa-sitemap"></i> Organization
+                        </button>
                         <button class="btn-primary" onclick="showManagerSales()" id="managerSalesBtn" style="display: none;">
                             <i class="fas fa-trophy"></i> Manager Performance
                         </button>
@@ -2821,6 +2901,59 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Assign Extra Leads Modal -->
+    <div class="modal fade" id="assignExtraLeadsModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Assign Extra Leads</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <form id="assignExtraLeadsForm" onsubmit="submitAssignExtraLeads(event)">
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label">Agent</label>
+                <select class="form-control" id="assignAgentIdSelect" required>
+                  <option value="">Loading agents...</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">How many extra leads?</label>
+                <select class="form-control" id="assignCount" required>
+                  <option value="">Select...</option>
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Assign</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Organization Viewer (Admin) -->
+    <div class="modal fade" id="organizationModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fas fa-sitemap"></i> Organization</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body" id="organizationBody">
+            <div class="text-muted">Loading organization...</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Bootstrap JS -->
