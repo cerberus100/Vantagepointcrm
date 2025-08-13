@@ -925,8 +925,34 @@
                 return;
             }
 
+            function statusToClass(status) {
+                const key = (status || '').toLowerCase();
+                const map = {
+                    'new': 'badge status-new',
+                    'contacted': 'badge status-contacted',
+                    'qualified': 'badge status-qualified',
+                    'closed_won': 'badge status-sold',
+                    'closed_lost': 'badge status-disposed',
+                    'disposed': 'badge status-disposed',
+                    'sold': 'badge status-sold'
+                };
+                return map[key] || 'badge status-new';
+            }
+            function statusToLabel(status) {
+                const key = (status || '').toLowerCase();
+                const map = {
+                    'new': 'New',
+                    'contacted': 'Contacted',
+                    'qualified': 'Qualified',
+                    'closed_won': 'Client Signed Up',
+                    'closed_lost': 'Closed Lost',
+                    'disposed': 'Disposed',
+                    'sold': 'Sold'
+                };
+                return map[key] || (status || 'New');
+            }
             const rows = allLeads.map(lead => {
-                const statusBadge = `<span class="badge status-${lead.status || 'new'}">${(lead.status || 'new').toUpperCase()}</span>`;
+                const statusBadge = `<span class="${statusToClass(lead.status)}">${statusToLabel(lead.status)}</span>`;
                 const priorityBadge = `<span class="badge priority-${lead.priority || 'medium'}">${(lead.priority || 'medium').toUpperCase()}</span>`;
                 
                 return `
@@ -996,9 +1022,10 @@
         }
 
         function canSendDocs(lead) {
-            return lead.email && lead.email.trim() !== '' && 
-                   ['new', 'contacted', 'qualified'].includes(lead.status?.toLowerCase()) &&
-                   !lead.docs_sent;
+            const emailOk = !!(lead && lead.email && lead.email.trim() !== '');
+            const statusKey = (lead?.status || '').toLowerCase();
+            const allowedStatuses = ['new', 'contacted', 'qualified'];
+            return emailOk && allowedStatuses.includes(statusKey) && !lead?.docs_sent;
         }
 
         function getCannotSendDocsReason(lead) {
