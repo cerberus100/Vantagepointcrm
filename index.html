@@ -2209,6 +2209,16 @@
                 alert(`Assign failed: ${e.message}`);
             }
         }
+
+        // Ensure global access for inline onclick handlers
+        window.openAssignExtraLeadsModal = openAssignExtraLeadsModal;
+        window.submitAssignExtraLeads = submitAssignExtraLeads;
+        if (typeof openOrganizationModal === 'function') {
+            window.openOrganizationModal = openOrganizationModal;
+        }
+        if (typeof assignExtraQuick === 'function') {
+            window.assignExtraQuick = assignExtraQuick;
+        }
         
         // Deal Tracker button visibility is handled by showDealTrackerButtons function above
         

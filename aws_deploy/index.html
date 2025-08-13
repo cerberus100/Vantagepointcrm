@@ -2165,6 +2165,12 @@
                 alert(`Assign failed: ${e.message}`);
             }
         }
+
+        // Ensure global access for inline onclick handlers in production
+        window.openAssignExtraLeadsModal = openAssignExtraLeadsModal;
+        window.submitAssignExtraLeads = submitAssignExtraLeads;
+        window.openOrganizationModal = openOrganizationModal;
+        window.assignExtraQuick = assignExtraQuick;
         
         // Deal Tracker button visibility is handled by showDealTrackerButtons function above
         
