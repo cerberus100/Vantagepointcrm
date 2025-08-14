@@ -1393,7 +1393,9 @@
                 const commissionBtn = document.getElementById('commissionReportsBtn');
                 if (commissionBtn) commissionBtn.style.display = 'inline-block';
                 
-                // BACKUP: Force show Deal Tracker button for managers too
+                // Show Organization (team view) for managers
+                const orgBtn = document.getElementById('orgViewBtn');
+                if (orgBtn) orgBtn.style.display = 'inline-block';
                 
             } else {
                 createUserBtn.style.display = 'none';
