@@ -806,6 +806,8 @@
             localStorage.removeItem('token');
             window.location.href = 'login.html';
         }
+        // Bind globally for onclick
+        window.logout = logout;
 
         // Data loading functions
         async function loadData() {
@@ -1378,7 +1380,7 @@
         // Manager action: reassign selected leads from manager hopper to an agent
         async function managerAssignSelectedTo(agentId) {
             try {
-                const selected = Array.from(document.querySelectorAll('input[type="checkbox"][data-lead-id], input[type="radio"][data-lead-id], input[name^="lead-select-"]:checked`))
+                const selected = Array.from(document.querySelectorAll('input[type="checkbox"][data-lead-id], input[type="radio"][data-lead-id], input[name^="lead-select-"]:checked'))
                     .map(el => parseInt(el.dataset.leadId || el.value))
                     .filter(Boolean);
                 if (!selected.length) {
