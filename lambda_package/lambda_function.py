@@ -1865,6 +1865,37 @@ def lambda_handler(event, context):
                     "generated_at": datetime.utcnow().isoformat()
                 }
             })
+
+        # ADMIN: Update user role - PUT /api/v1/users/{id}/role
+        if path.startswith('/api/v1/users/') and path.endswith('/role') and method == 'PUT':
+            if current_user.get('role') != 'admin':
+                return create_response(403, {"detail": "Admin access required"}, request_id, event)
+
+            try:
+                target_user_id = int(path.split('/')[-2])
+            except Exception:
+                return create_response(400, {"detail": "Invalid user id in path"}, request_id, event)
+
+            new_role = (body_data or {}).get('role')
+            if new_role not in ['admin','manager','agent']:
+                return create_response(400, {"detail": "Invalid role. Must be admin, manager, or agent"}, request_id, event)
+
+            # Find user by id
+            try:
+                scan_resp = users_table.scan(
+                    FilterExpression='id = :uid',
+                    ExpressionAttributeValues={':uid': target_user_id}
+                )
+                items = scan_resp.get('Items', [])
+                if not items:
+                    return create_response(404, {"detail": "User not found"}, request_id, event)
+                user_item = items[0]
+                user_item['role'] = new_role
+                user_item['updated_at'] = datetime.utcnow().isoformat()
+                users_table.put_item(Item=user_item)
+                return create_response(200, {"message": "Role updated", "user_id": target_user_id, "new_role": new_role}, request_id, event)
+            except Exception as e:
+                return create_response(500, {"detail": sanitize_error_message(e, "update_role")}, request_id, event)
         
         # ADMIN: Assign extra high-quality unassigned leads to a user (agent or manager)
         if path == '/api/v1/admin/assign-extra-leads' and method == 'POST':
@@ -1986,6 +2017,66 @@ def lambda_handler(event, context):
                 pass
 
             return create_response(200, {"reassigned": updated, "failed": len(errors), "errors": errors}, request_id, event)
+
+        # MANAGER: Assign extra unassigned leads to a team agent (within caps)
+        if path == '/api/v1/manager/assign-extra-leads' and method == 'POST':
+            if current_user.get('role') != 'manager':
+                return create_response(403, {"detail": "Manager access required"}, request_id, event)
+
+            try:
+                target_agent_id = int(body_data.get('agent_id'))
+                count = int(body_data.get('count', 0))
+            except Exception:
+                return create_response(400, {"detail": "agent_id and count must be integers"}, request_id, event)
+
+            if count not in [10, 20, 50]:
+                return create_response(400, {"detail": "count must be one of 10, 20, 50"}, request_id, event)
+
+            # Team validation
+            team_agents = [u for u in get_all_users() if u.get('manager_id') == current_user.get('id') and u.get('role') == 'agent']
+            team_agent_ids = {int(a.get('id')) for a in team_agents}
+            if target_agent_id not in team_agent_ids:
+                return create_response(403, {"detail": "Target agent is not in your team"}, request_id, event)
+
+            # Daily caps for manager (100) and per agent (20)
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            mgr_key = f"manager:{current_user.get('id')}:extra:{today}"
+            pair_key = f"manager:{current_user.get('id')}:agent:{target_agent_id}:extra:{today}"
+            try:
+                mgr_item = rate_limit_table.update_item(
+                    Key={'id': mgr_key},
+                    UpdateExpression='ADD total :z',
+                    ExpressionAttributeValues={':z': 0},
+                    ReturnValues='ALL_NEW'
+                )
+                mgr_used = int((mgr_item.get('Attributes') or {}).get('total', 0))
+            except Exception:
+                mgr_used = 0
+            if mgr_used + count > 100:
+                return create_response(429, {"detail": f"Daily limit exceeded. You can assign up to 100 extra leads per day. Used: {mgr_used}"}, request_id, event)
+
+            try:
+                pair_item = rate_limit_table.update_item(
+                    Key={'id': pair_key},
+                    UpdateExpression='ADD total :z',
+                    ExpressionAttributeValues={':z': 0},
+                    ReturnValues='ALL_NEW'
+                )
+                pair_used = int((pair_item.get('Attributes') or {}).get('total', 0))
+            except Exception:
+                pair_used = 0
+            if pair_used + count > 20:
+                remaining = max(0, 20 - pair_used)
+                return create_response(429, {"detail": f"Per-agent daily limit is 20 extra leads. Remaining for this agent today: {remaining}"}, request_id, event)
+
+            assigned = assign_extra_leads_to_agent(target_agent_id, count, request_id)
+            try:
+                rate_limit_table.update_item(Key={'id': mgr_key}, UpdateExpression='ADD total :n', ExpressionAttributeValues={':n': assigned})
+                rate_limit_table.update_item(Key={'id': pair_key}, UpdateExpression='ADD total :n', ExpressionAttributeValues={':n': assigned})
+            except Exception:
+                pass
+
+            return create_response(200, {"assigned": assigned, "requested": count, "agent_id": target_agent_id}, request_id, event)
 
         
         # Send docs endpoint - POST /api/v1/leads/{id}/send-docs
