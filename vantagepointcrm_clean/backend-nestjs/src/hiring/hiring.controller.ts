@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 
 import { HiringService } from './hiring.service';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
+import { BulkInvitationDto, BulkUploadResult } from './dto/bulk-invitation.dto';
 import { SignatureDto, PaymentUploadDto, TrainingDto, CreateCredentialsDto } from './dto/onboarding.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -123,6 +124,37 @@ export class HiringController {
     @Request() req: any,
   ): Promise<HiringInvite> {
     return this.hiringService.revokeInvitation(id, req.user.id);
+  }
+
+  @Post('invitations/bulk')
+  @Roles(UserRole.HIRING_TEAM, UserRole.ADMIN)
+  @ApiOperation({ 
+    summary: 'Create bulk invitations',
+    description: 'Send invitations to multiple new hires from CSV/Excel upload'
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Bulk invitations processed',
+    schema: {
+      type: 'object',
+      properties: {
+        total: { type: 'number' },
+        successful: { type: 'number' },
+        failed: { type: 'number' },
+        errors: { type: 'array' },
+        invitations: { type: 'array' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - validation failed',
+  })
+  async createBulkInvitations(
+    @Body() bulkDto: BulkInvitationDto,
+    @Request() req: any,
+  ): Promise<BulkUploadResult> {
+    return this.hiringService.createBulkInvitations(bulkDto, req.user.id);
   }
 }
 

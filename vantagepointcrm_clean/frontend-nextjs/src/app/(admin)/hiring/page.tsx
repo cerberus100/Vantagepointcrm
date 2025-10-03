@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { BulkUploadDialog } from "@/components/BulkUploadDialog";
 import {
   Table,
   TableBody,
@@ -188,8 +189,13 @@ export default function HiringPage() {
       <div className="container mx-auto max-w-7xl p-6">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">Hiring Management</h1>
-          <p className="text-muted">Send invitations and track new hire onboarding progress</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-primary mb-2">Hiring Management</h1>
+              <p className="text-muted">Send invitations and track new hire onboarding progress</p>
+            </div>
+            <BulkUploadDialog />
+          </div>
         </div>
 
         <div className="grid gap-8 lg:grid-cols-3">

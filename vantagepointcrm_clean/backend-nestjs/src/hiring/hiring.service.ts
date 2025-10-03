@@ -11,6 +11,7 @@ import { PaymentDocument, PaymentDocType } from './entities/payment-document.ent
 import { Training } from './entities/training.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
+import { BulkInvitationDto, BulkUploadResult } from './dto/bulk-invitation.dto';
 import { SignatureDto, PaymentUploadDto, TrainingDto, CreateCredentialsDto } from './dto/onboarding.dto';
 import { AuditLogService } from '../common/services/audit-log.service';
 import { AuditEventType } from '../common/entities/audit-log.entity';
@@ -608,6 +609,117 @@ export class HiringService {
       this.logger.error(`Error sending invitation email to ${invitation.email}`, error);
       throw error;
     }
+  }
+
+  async createBulkInvitations(bulkDto: BulkInvitationDto, managerId: number): Promise<BulkUploadResult> {
+    const result: BulkUploadResult = {
+      total: bulkDto.invitations.length,
+      successful: 0,
+      failed: 0,
+      errors: [],
+      invitations: [],
+    };
+
+    this.logger.log(`Processing bulk upload of ${bulkDto.invitations.length} invitations by manager ${managerId}`);
+
+    // Process invitations sequentially to avoid overwhelming the email service
+    for (let i = 0; i < bulkDto.invitations.length; i++) {
+      const inviteDto = bulkDto.invitations[i];
+      
+      try {
+        // Check if user already exists
+        const existingUser = await this.userRepository.findOne({
+          where: { email: inviteDto.email }
+        });
+
+        if (existingUser) {
+          result.failed++;
+          result.errors.push({
+            row: i + 1,
+            email: inviteDto.email,
+            error: 'User with this email already exists',
+          });
+          result.invitations.push({
+            email: inviteDto.email,
+            status: 'failed',
+            error: 'User already exists',
+          });
+          continue;
+        }
+
+        // Check if there's already a pending invitation
+        const existingInvite = await this.hiringInviteRepository.findOne({
+          where: { 
+            email: inviteDto.email,
+            status: InviteStatus.SENT
+          }
+        });
+
+        if (existingInvite && !existingInvite.is_expired) {
+          result.failed++;
+          result.errors.push({
+            row: i + 1,
+            email: inviteDto.email,
+            error: 'Active invitation already exists',
+          });
+          result.invitations.push({
+            email: inviteDto.email,
+            status: 'failed',
+            error: 'Active invitation exists',
+          });
+          continue;
+        }
+
+        // Create invitation
+        const invitation = await this.createInvitation(inviteDto, managerId);
+        
+        result.successful++;
+        result.invitations.push({
+          email: invitation.email,
+          status: 'success',
+          id: invitation.id,
+        });
+
+        // Add small delay to avoid overwhelming email service
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+      } catch (error) {
+        result.failed++;
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push({
+          row: i + 1,
+          email: inviteDto.email,
+          error: errorMessage,
+        });
+        result.invitations.push({
+          email: inviteDto.email,
+          status: 'failed',
+          error: errorMessage,
+        });
+        this.logger.error(`Error creating invitation for ${inviteDto.email}`, error);
+      }
+    }
+
+    // Log bulk upload audit event
+    await this.auditLogService.logEvent(
+      AuditEventType.INVITE_CREATED,
+      managerId,
+      null,
+      {
+        bulk_upload: true,
+        total: result.total,
+        successful: result.successful,
+        failed: result.failed,
+      },
+      null,
+      null,
+      'HiringInvite',
+      null,
+    );
+
+    this.logger.log(`Bulk upload complete: ${result.successful}/${result.total} successful`);
+
+    return result;
   }
 
   private isStrongPassword(password: string): boolean {
