@@ -12,6 +12,7 @@ import { LeadsModule } from './leads/leads.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 // import { HealthModule } from './health/health.module';
 import { HiringModule } from './hiring/hiring.module';
+import { CommonModule } from './common/common.module';
 
 import DatabaseConfig from './config/database.config';
 import RedisConfig from './config/redis.config';
@@ -92,6 +93,7 @@ import AppConfig from './config/app.config';
     }),
 
     // Feature Modules
+    CommonModule,
     DatabaseModule,
     AuthModule,
     UsersModule,

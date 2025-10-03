@@ -26,7 +26,8 @@
     "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
-    "seed:run": "npm run typeorm -- seed:run -d src/database/data-source.ts"
+    "seed:run": "npm run typeorm -- seed:run -d src/database/data-source.ts",
+    "create:admin": "ts-node scripts/create-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.450.0",
