@@ -1,0 +1,28 @@
+{
+  "environment": "dev",
+  "domainName": null,
+  "database": {
+    "instanceType": "t3.micro",
+    "allocatedStorage": 20,
+    "maxAllocatedStorage": 100,
+    "backupRetention": 7,
+    "multiAz": false,
+    "deletionProtection": false
+  },
+  "redis": {
+    "nodeType": "cache.t3.micro",
+    "numNodes": 1
+  },
+  "lambda": {
+    "memorySize": 512,
+    "timeout": 30
+  },
+  "waf": {
+    "rateLimit": 2000
+  },
+  "tags": {
+    "Environment": "dev",
+    "Application": "VantagePoint",
+    "Owner": "Development Team"
+  }
+}
