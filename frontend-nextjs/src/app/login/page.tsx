@@ -1,7 +1,7 @@
 'use client';
 
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://production.eba-nti2hpvd.us-east-1.elasticbeanstalk.com/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://13.222.236.10/api/v1';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';

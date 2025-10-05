@@ -1,7 +1,7 @@
 "use client";
 
 // API Configuration
-const API_BASE_URL = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'https://production.eba-nti2hpvd.us-east-1.elasticbeanstalk.com/api/v1') : 'https://production.eba-nti2hpvd.us-east-1.elasticbeanstalk.com/api/v1';
+const API_BASE_URL = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://13.222.236.10/api/v1') : 'http://13.222.236.10/api/v1';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
