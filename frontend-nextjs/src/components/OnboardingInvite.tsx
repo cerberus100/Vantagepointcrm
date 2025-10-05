@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -63,8 +63,8 @@ type CredentialsFormData = z.infer<typeof credentialsSchema>;
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://production.eba-nti2hpvd.us-east-1.elasticbeanstalk.com/api/v1';
 
 export default function OnboardingInvite() {
-  const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [currentStep, setCurrentStep] = useState(0);
   const [inviteData, setInviteData] = useState<{
     firstName: string;
@@ -76,7 +76,7 @@ export default function OnboardingInvite() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [completedSteps, setCompletedSteps] = useState<boolean[]>([false, false, false, false]);
-  const token = params.token as string;
+  const token = searchParams.get('token');
 
   const steps = [
     { id: 0, name: "Signatures", icon: FileText },
