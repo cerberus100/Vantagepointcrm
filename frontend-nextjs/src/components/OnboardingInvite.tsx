@@ -66,7 +66,14 @@ export default function OnboardingInvite() {
   const params = useParams();
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
-  const [inviteData, setInviteData] = useState<any>(null);
+  const [inviteData, setInviteData] = useState<{
+    firstName: string;
+    lastName: string;
+    signatures?: any[];
+    paymentDocs?: any[];
+    trainings?: any[];
+    isActive: boolean;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [completedSteps, setCompletedSteps] = useState<boolean[]>([false, false, false, false]);
   const token = params.token as string;
@@ -544,6 +551,7 @@ function TrainingStep({ token, onComplete }: { token: string; onComplete: () => 
 
 // Credentials Step Component
 function CredentialsStep({ token, onComplete }: { token: string; onComplete: () => void }) {
+  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const form = useForm<CredentialsFormData>({
     resolver: zodResolver(credentialsSchema),
