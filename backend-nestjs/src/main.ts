@@ -2,8 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import helmet from 'helmet';
-import compression from 'compression';
+import * as helmet from 'helmet';
+import * as compression from 'compression';
 
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -19,7 +19,7 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   // Security middleware
-  app.use(helmet({
+  app.use(helmet.default({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],

@@ -23,16 +23,13 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production
-
-# Rebuild bcrypt for the correct platform
-RUN npm rebuild bcrypt
+RUN npm ci --omit=dev
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
 
 # Expose port
-EXPOSE 3000
+EXPOSE 8080
 
 # Start the application
 CMD ["node", "dist/main.js"]

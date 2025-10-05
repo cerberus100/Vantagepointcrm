@@ -1,7 +1,7 @@
 'use client';
 
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://13.222.236.10/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://44.201.214.118/api/v1';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';

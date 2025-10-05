@@ -1,5 +1,5 @@
 {
-  "ServiceName": "vantagepoint-backend",
+  "ConfigurationSource": "API",
   "SourceConfiguration": {
     "CodeRepository": {
       "RepositoryUrl": "https://github.com/cerberus100/Vantagepointcrm",
@@ -13,9 +13,5 @@
       }
     },
     "AutoDeploymentsEnabled": true
-  },
-  "InstanceConfiguration": {
-    "Cpu": "0.25 vCPU",
-    "Memory": "0.5 GB"
   }
 }
