@@ -1,7 +1,7 @@
 "use client";
 
 // API Configuration
-const API_BASE_URL = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://44.201.214.118/api/v1') : 'http://44.201.214.118/api/v1';
+const API_BASE_URL = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://18.212.23.66/api/v1') : 'http://18.212.23.66/api/v1';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
