@@ -69,9 +69,9 @@ export default function OnboardingInvite() {
   const [inviteData, setInviteData] = useState<{
     firstName: string;
     lastName: string;
-    signatures?: any[];
-    paymentDocs?: any[];
-    trainings?: any[];
+    signatures?: Array<{ docType: string; envelopeId: string }>;
+    paymentDocs?: Array<{ type: string; fileUrl: string }>;
+    trainings?: Array<{ score: number; attestation: string }>;
     isActive: boolean;
   } | null>(null);
   const [loading, setLoading] = useState(true);
