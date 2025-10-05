@@ -1,0 +1,35 @@
+{
+  "ServiceName": "vantagepoint-backend",
+  "SourceConfiguration": {
+    "ImageRepository": {
+      "ImageIdentifier": "337909762852.dkr.ecr.us-east-1.amazonaws.com/vantagepoint-backend:latest",
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "3000",
+        "RuntimeEnvironmentVariables": {
+          "NODE_ENV": "production",
+          "DATABASE_HOST": "vantagepoint-production.c6ds4c4qok1n.us-east-1.rds.amazonaws.com",
+          "DATABASE_PORT": "5432",
+          "DATABASE_USERNAME": "postgres",
+          "DATABASE_PASSWORD": "VantagePoint2024!",
+          "DATABASE_NAME": "vantagepointcrm",
+          "JWT_SECRET": "VantagePoint2024!SecretKey",
+          "JWT_EXPIRES_IN": "24h"
+        }
+      }
+    },
+    "AutoDeploymentsEnabled": true
+  },
+  "InstanceConfiguration": {
+    "Cpu": "1 vCPU",
+    "Memory": "2 GB"
+  },
+  "HealthCheckConfiguration": {
+    "Protocol": "HTTP",
+    "Path": "/",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
+  }
+}

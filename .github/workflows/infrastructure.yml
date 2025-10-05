@@ -1,0 +1,318 @@
+name: Infrastructure Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths: [ 'infrastructure/**' ]
+  pull_request:
+    branches: [ main, develop ]
+    paths: [ 'infrastructure/**' ]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+  AWS_REGION: 'us-east-1'
+
+jobs:
+  # ========================================
+  # INFRASTRUCTURE SYNTHESIS
+  # ========================================
+  synthesize:
+    name: Synthesize Infrastructure
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, production]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        working-directory: ./infrastructure
+        run: npm ci
+
+      - name: Build Infrastructure
+        working-directory: ./infrastructure
+        run: npm run build
+
+      - name: Synthesize CloudFormation Template
+        working-directory: ./infrastructure
+        run: |
+          npx cdk synth --context environment=${{ matrix.environment }} > ${{ matrix.environment }}-template.json
+
+      - name: Upload CloudFormation Template
+        uses: actions/upload-artifact@v3
+        with:
+          name: cloudformation-template-${{ matrix.environment }}
+          path: ./infrastructure/${{ matrix.environment }}-template.json
+
+  # ========================================
+  # INFRASTRUCTURE SECURITY SCANNING
+  # ========================================
+  security-scan:
+    name: Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Dependencies
+        working-directory: ./infrastructure
+        run: npm ci
+
+      - name: Run Checkov Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: ./infrastructure
+          framework: cloudformation
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          skip_check: CKV_AWS_79,CKV_AWS_23  # Skip specific checks if needed
+
+      - name: Upload Checkov results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+
+      - name: Run cfn-lint
+        run: |
+          pip install cfn-lint
+          cfn-lint ./infrastructure/*.json
+
+  # ========================================
+  # INFRASTRUCTURE COST ESTIMATION
+  # ========================================
+  cost-estimation:
+    name: Infrastructure Cost Estimation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Dependencies
+        working-directory: ./infrastructure
+        run: npm ci
+
+      - name: Run Cost Estimation
+        working-directory: ./infrastructure
+        run: |
+          echo "## Infrastructure Cost Estimation" > cost-estimation.md
+          echo "" >> cost-estimation.md
+          
+          for env in dev staging production; do
+            echo "### $env Environment" >> cost-estimation.md
+            ./scripts/cost-estimate.sh $env >> cost-estimation.md
+            echo "" >> cost-estimation.md
+          done
+
+      - name: Upload Cost Estimation
+        uses: actions/upload-artifact@v3
+        with:
+          name: cost-estimation
+          path: ./infrastructure/cost-estimation.md
+
+  # ========================================
+  # INFRASTRUCTURE VALIDATION
+  # ========================================
+  validate:
+    name: Validate Infrastructure
+    runs-on: ubuntu-latest
+    needs: [synthesize, security-scan]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Dependencies
+        working-directory: ./infrastructure
+        run: npm ci
+
+      - name: Download CloudFormation Templates
+        uses: actions/download-artifact@v3
+        with:
+          path: ./templates
+
+      - name: Validate CloudFormation Templates
+        run: |
+          for template in ./templates/*.json; do
+            echo "Validating $template"
+            aws cloudformation validate-template --template-body file://$template
+          done
+
+      - name: Run Infrastructure Tests
+        working-directory: ./infrastructure
+        run: npm test
+
+  # ========================================
+  # INFRASTRUCTURE DIFF
+  # ========================================
+  diff:
+    name: Infrastructure Diff
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Dependencies
+        working-directory: ./infrastructure
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Generate Infrastructure Diff
+        working-directory: ./infrastructure
+        run: |
+          echo "## Infrastructure Changes" > infrastructure-diff.md
+          echo "" >> infrastructure-diff.md
+          
+          for env in dev staging production; do
+            echo "### $env Environment" >> infrastructure-diff.md
+            npx cdk diff --context environment=$env >> infrastructure-diff.md
+            echo "" >> infrastructure-diff.md
+          done
+
+      - name: Comment PR with Infrastructure Diff
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const diff = fs.readFileSync('./infrastructure/infrastructure-diff.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: diff
+            });
+
+  # ========================================
+  # INFRASTRUCTURE DEPLOYMENT (DRY RUN)
+  # ========================================
+  dry-run:
+    name: Infrastructure Deployment Dry Run
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Dependencies
+        working-directory: ./infrastructure
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run CDK Deploy Dry Run
+        working-directory: ./infrastructure
+        run: |
+          echo "## Infrastructure Deployment Dry Run" > deployment-dry-run.md
+          echo "" >> deployment-dry-run.md
+          
+          for env in dev staging production; do
+            echo "### $env Environment" >> deployment-dry-run.md
+            npx cdk deploy --context environment=$env --dry-run >> deployment-dry-run.md
+            echo "" >> deployment-dry-run.md
+          done
+
+      - name: Upload Deployment Dry Run Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-dry-run
+          path: ./infrastructure/deployment-dry-run.md
+
+  # ========================================
+  # INFRASTRUCTURE SUMMARY
+  # ========================================
+  summary:
+    name: Infrastructure Summary
+    runs-on: ubuntu-latest
+    needs: [synthesize, security-scan, cost-estimation, validate, diff, dry-run]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download All Infrastructure Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./infrastructure-reports
+
+      - name: Generate Infrastructure Summary
+        run: |
+          echo "# Infrastructure Validation Summary" > infrastructure-summary.md
+          echo "Generated on: $(date)" >> infrastructure-summary.md
+          echo "" >> infrastructure-summary.md
+          
+          echo "## Validation Results" >> infrastructure-summary.md
+          echo "- Synthesis: ${{ needs.synthesize.result }}" >> infrastructure-summary.md
+          echo "- Security Scan: ${{ needs.security-scan.result }}" >> infrastructure-summary.md
+          echo "- Cost Estimation: ${{ needs.cost-estimation.result }}" >> infrastructure-summary.md
+          echo "- Validation: ${{ needs.validate.result }}" >> infrastructure-summary.md
+          echo "- Diff: ${{ needs.diff.result }}" >> infrastructure-summary.md
+          echo "- Dry Run: ${{ needs.dry-run.result }}" >> infrastructure-summary.md
+
+      - name: Upload Infrastructure Summary
+        uses: actions/upload-artifact@v3
+        with:
+          name: infrastructure-summary-${{ github.sha }}
+          path: infrastructure-summary.md
+
+      - name: Comment PR with Infrastructure Summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('infrastructure-summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });

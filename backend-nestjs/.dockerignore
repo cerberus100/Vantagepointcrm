@@ -1,0 +1,17 @@
+node_modules
+dist
+.env
+.env.local
+npm-debug.log
+.DS_Store
+*.log
+coverage
+.nyc_output
+test
+tests
+*.test.ts
+*.spec.ts
+.git
+.gitignore
+README.md
+lambda-deployment.zip

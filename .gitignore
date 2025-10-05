@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+.nyc_output/
+
+# Production builds
+dist/
+build/
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# AWS
+.aws/
+*.pem
+cdk.out/
+cdk.context.json
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+tmp/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Package files
+*.tgz
+
+# Deployment packages
+*.zip
+lambda-deployment.zip
+backend-deployment.zip
+
+# Local database
+*.sqlite
+*.sqlite3
+
+# Certificates
+*.crt
+*.key
