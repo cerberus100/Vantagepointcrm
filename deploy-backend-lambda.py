@@ -1,0 +1,54 @@
+import json
+import boto3
+import time
+
+def lambda_handler(event, context):
+    ec2 = boto3.client('ec2', region_name='us-east-1')
+    ssm = boto3.client('ssm', region_name='us-east-1')
+    
+    # Get instance ID
+    instance_id = event.get('instance_id', 'i-0c01f697a29d26b1a')
+    
+    # Commands to run
+    commands = [
+        "#!/bin/bash",
+        "sudo yum update -y",
+        "sudo yum install -y docker",
+        "sudo service docker start",
+        "sudo systemctl enable docker",
+        "sleep 5",
+        "sudo docker pull public.ecr.aws/a8m7d8x7/vantagepoint-backend:latest",
+        "sudo docker stop vantagepoint-backend 2>/dev/null || true",
+        "sudo docker rm vantagepoint-backend 2>/dev/null || true",
+        "sudo docker run -d --name vantagepoint-backend --restart always -p 80:8080 -e NODE_ENV=production -e DATABASE_HOST=vantagepoint-production.c6ds4c4qok1n.us-east-1.rds.amazonaws.com -e DATABASE_PORT=5432 -e DATABASE_USERNAME=postgres -e DATABASE_PASSWORD='VantagePoint2024!' -e DATABASE_NAME=vantagepointcrm -e JWT_SECRET='VantagePoint2024!SecretKey' -e JWT_EXPIRES_IN='24h' -e PORT=8080 public.ecr.aws/a8m7d8x7/vantagepoint-backend:latest",
+        "sleep 10",
+        "curl -X POST http://localhost/api/v1/setup/create-admin -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"VantagePoint2024!\",\"email\":\"admin@vantagepointcrm.com\"}' || true",
+        "sudo docker ps",
+        "sudo docker logs vantagepoint-backend"
+    ]
+    
+    try:
+        # Send command
+        response = ssm.send_command(
+            InstanceIds=[instance_id],
+            DocumentName="AWS-RunShellScript",
+            Parameters={'commands': commands}
+        )
+        
+        command_id = response['Command']['CommandId']
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': 'Deployment started',
+                'command_id': command_id,
+                'instance_id': instance_id
+            })
+        }
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': str(e)
+            })
+        }

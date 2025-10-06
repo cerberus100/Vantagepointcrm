@@ -1,0 +1,21 @@
+TERMINAL DEPLOYMENT INSTRUCTIONS
+================================
+
+1. OPEN A NEW TERMINAL WINDOW
+
+2. SSH INTO THE EC2 INSTANCE:
+   ssh -i ~/vantagepoint-deploy-key.pem ec2-user@3.83.217.40
+
+   (If asked about authenticity, type "yes")
+
+3. ONCE CONNECTED, PASTE THIS ENTIRE COMMAND:
+
+sudo yum install -y docker && sudo service docker start && aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 337909762852.dkr.ecr.us-east-1.amazonaws.com && sudo docker run -d --name vantagepoint-backend --restart always -p 80:8080 -e NODE_ENV=production -e DATABASE_HOST=vantagepoint-production.c6ds4c4qok1n.us-east-1.rds.amazonaws.com -e DATABASE_PORT=5432 -e DATABASE_USERNAME=postgres -e DATABASE_PASSWORD="VantagePoint2024!" -e DATABASE_NAME=vantagepointcrm -e JWT_SECRET="VantagePoint2024!SecretKey" -e JWT_EXPIRES_IN="24h" -e PORT=8080 337909762852.dkr.ecr.us-east-1.amazonaws.com/vantagepoint-backend:v2 && sleep 5 && curl -X POST http://localhost/api/v1/setup/create-admin -H "Content-Type: application/json" -d '{"username":"admin","password":"VantagePoint2024!","email":"admin@vantagepointcrm.com"}' && echo "✅ Backend deployed successfully!"
+
+4. THAT'S IT! 
+
+Your backend will be running and you can login at:
+https://main.dfh82x9nr61u2.amplifyapp.com
+
+Username: admin
+Password: VantagePoint2024!

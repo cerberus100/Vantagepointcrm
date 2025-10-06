@@ -12,6 +12,7 @@ import { LeadsModule } from './leads/leads.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 // import { HealthModule } from './health/health.module';
 import { HiringModule } from './hiring/hiring.module';
+import { SetupModule } from './setup/setup.module';
 import { CommonModule } from './common/common.module';
 
 import DatabaseConfig from './config/database.config';
@@ -40,7 +41,7 @@ import AppConfig from './config/app.config';
         schema: 'vantagepoint',
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
-        synchronize: configService.get<string>('NODE_ENV') === 'development',
+        synchronize: true, // Temporarily enable for initial setup
         logging: configService.get<string>('NODE_ENV') === 'development',
         ssl: configService.get<string>('NODE_ENV') === 'production' ? {
           rejectUnauthorized: false,
@@ -96,6 +97,7 @@ import AppConfig from './config/app.config';
     AnalyticsModule,
     // HealthModule,
     HiringModule,
+    SetupModule,
   ],
   controllers: [],
   providers: [],
