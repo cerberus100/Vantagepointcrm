@@ -39,9 +39,12 @@ export default function LoginPage() {
       if (response.ok) {
         const data = await response.json();
         localStorage.setItem('authToken', data.access_token);
-        toast.success('Login successful!');
-        // Use window.location for static export
-        window.location.href = '/';
+        localStorage.setItem('user', JSON.stringify(data.user));
+        toast.success('Login successful! Redirecting...');
+        // Force reload to dashboard
+        setTimeout(() => {
+          window.location.replace('/');
+        }, 1000);
       } else {
         const errorData = await response.json().catch(() => ({}));
         toast.error(errorData.message || 'Invalid credentials');
