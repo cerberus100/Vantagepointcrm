@@ -41,7 +41,7 @@ export default function Dashboard() {
 
       try {
         // Verify token with backend
-        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        const response = await fetch(`${API_BASE_URL}/auth/profile`, {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
