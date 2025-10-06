@@ -1,4 +1,5 @@
 {
   "framework": "nextjs",
-  "buildPath": "frontend-nextjs"
+  "buildCommand": "npm run build",
+  "startCommand": "npm run start"
 }
