@@ -40,11 +40,8 @@ export default function LoginPage() {
         const data = await response.json();
         localStorage.setItem('authToken', data.access_token);
         localStorage.setItem('user', JSON.stringify(data.user));
-        toast.success('Login successful! Redirecting...');
-        // Force reload to dashboard
-        setTimeout(() => {
-          window.location.replace('/');
-        }, 1000);
+        toast.success('Login successful!');
+        router.push('/');
       } else {
         const errorData = await response.json().catch(() => ({}));
         toast.error(errorData.message || 'Invalid credentials');
