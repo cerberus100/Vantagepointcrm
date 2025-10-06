@@ -1,7 +1,7 @@
 "use client";
 
-// API Configuration
-const API_BASE_URL = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'https://production.eba-nti2hpvd.us-east-1.elasticbeanstalk.com/api/v1') : 'https://production.eba-nti2hpvd.us-east-1.elasticbeanstalk.com/api/v1';
+// API Configuration - Direct URL for production
+const API_BASE_URL = 'https://3.83.217.40/api/v1';
 
 import { Hospital, Settings, User, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";

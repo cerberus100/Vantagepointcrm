@@ -41,7 +41,7 @@ import AppConfig from './config/app.config';
         schema: 'vantagepoint',
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
-        synchronize: true, // Temporarily enable for initial setup
+        synchronize: false, // Disabled - using manual schema
         logging: configService.get<string>('NODE_ENV') === 'development',
         ssl: configService.get<string>('NODE_ENV') === 'production' ? {
           rejectUnauthorized: false,
