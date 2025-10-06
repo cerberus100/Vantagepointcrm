@@ -60,7 +60,7 @@ type TrainingFormData = z.infer<typeof trainingSchema>;
 type CredentialsFormData = z.infer<typeof credentialsSchema>;
 
 // API Configuration
-const API_BASE_URL = 'https://3.83.217.40/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3.83.217.40/api/v1';
 
 export default function OnboardingInvite() {
   const router = useRouter();
