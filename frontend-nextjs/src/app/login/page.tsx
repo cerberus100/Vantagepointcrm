@@ -40,8 +40,7 @@ export default function LoginPage() {
         const data = await response.json();
         localStorage.setItem('authToken', data.access_token);
         toast.success('Login successful!');
-        // Use window.location for static export compatibility
-        window.location.href = '/';
+        router.push('/');
       } else {
         const errorData = await response.json().catch(() => ({}));
         toast.error(errorData.message || 'Invalid credentials');

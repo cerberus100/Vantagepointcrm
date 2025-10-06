@@ -10,9 +10,10 @@ frontend:
         - echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" >> .env.production
         - npm run build
   artifacts:
-    baseDirectory: frontend-nextjs/out
+    baseDirectory: frontend-nextjs/.next
     files:
       - '**/*'
   cache:
     paths:
       - frontend-nextjs/node_modules/**/*
+      - frontend-nextjs/.next/cache/**/*
