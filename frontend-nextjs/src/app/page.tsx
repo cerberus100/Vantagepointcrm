@@ -1,5 +1,8 @@
 "use client";
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 // API Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3.83.217.40/api/v1';
 
@@ -19,21 +22,21 @@ interface DashboardMetrics {
   totalLeads: number;
 }
 
-export default function Dashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+export default function DashboardPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     practicesSignedUp: 0,
     activeLeads: 0,
     conversionRate: 0,
-    totalLeads: 0,
+    totalLeads: 0
   });
-  const router = useRouter();
 
   useEffect(() => {
     const checkAuthAndFetchData = async () => {
       const token = localStorage.getItem('authToken');
-
+      
       if (!token) {
         router.push('/login');
         return;
@@ -79,81 +82,56 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return null; // Will redirect to login
+    return null;
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)]">
+    <div className="min-h-screen bg-background">
       <TopHeader />
-
       <div className="flex">
         <Sidebar />
+        <main className="flex-1 p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+            <Toolbar />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <MetricCard
+              title="Total Practices"
+              value={metrics.practicesSignedUp}
+              icon={<Hospital className="h-8 w-8" />}
+              trend={+12}
+            />
+            <MetricCard
+              title="Active Leads"
+              value={metrics.activeLeads}
+              icon={<Users className="h-8 w-8" />}
+              trend={+8}
+            />
+            <MetricCard
+              title="Total Leads"
+              value={metrics.totalLeads}
+              icon={<ClipboardList className="h-8 w-8" />}
+              trend={+15}
+            />
+            <MetricCard
+              title="Conversion Rate"
+              value={`${metrics.conversionRate}%`}
+              icon={<TrendingUp className="h-8 w-8" />}
+              trend={+3}
+            />
+          </div>
 
-        <main className="flex-1 lg:ml-64 ml-0">
-          <div className="container mx-auto max-w-7xl p-6">
-            {/* Toolbar */}
-            <div className="mb-8">
-              <Toolbar />
-            </div>
-
-            {/* Metrics Grid */}
-            <div className="mb-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  icon: Hospital,
-                  label: "Practices Signed Up",
-                  value: metrics.practicesSignedUp,
-                  subLabel: "Active practices",
-                  trend: { direction: 'up' as const, value: `${Math.round((metrics.practicesSignedUp / Math.max(metrics.practicesSignedUp, 1)) * 100)}%` }
-                },
-                {
-                  icon: ClipboardList,
-                  label: "Active Leads",
-                  value: metrics.activeLeads,
-                  subLabel: "Currently active",
-                  trend: { direction: 'up' as const, value: `${Math.round((metrics.activeLeads / Math.max(metrics.totalLeads, 1)) * 100)}%` }
-                },
-                {
-                  icon: TrendingUp,
-                  label: "Conversion Rate",
-                  value: `${metrics.conversionRate}%`,
-                  subLabel: "Success rate",
-                  trend: { direction: 'up' as const, value: `${metrics.conversionRate}%` }
-                },
-                {
-                  icon: Users,
-                  label: "Total Leads",
-                  value: metrics.totalLeads,
-                  subLabel: "All time",
-                  trend: { direction: 'up' as const, value: '100%' }
-                }
-              ].map((metric, index) => (
-                <MetricCard
-                  key={index}
-                  icon={metric.icon}
-                  label={metric.label}
-                  value={metric.value}
-                  subLabel={metric.subLabel}
-                  trend={metric.trend}
-                />
-              ))}
-            </div>
-
-            {/* Data Table */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-primary">Recent Leads</h3>
-              <DataTable />
-            </div>
+          <div className="bg-card rounded-lg shadow-sm">
+            <DataTable />
           </div>
         </main>
       </div>
