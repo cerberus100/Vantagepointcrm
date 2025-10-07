@@ -1,0 +1,19 @@
+version: 1
+applications:
+  - appRoot: frontend-nextjs
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - echo "NEXT_PUBLIC_API_URL=https://3.83.217.40/api/v1" >> .env.production
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*

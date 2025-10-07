@@ -64,6 +64,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
 
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3.83.217.40/api/v1'
+
   useEffect(() => {
     checkAuth()
     fetchLeads()
@@ -71,13 +73,13 @@ export default function HomePage() {
 
   const checkAuth = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
       if (!token) {
         window.location.href = '/login'
         return
       }
 
-      const response = await fetch('/api/auth/me', {
+      const response = await fetch(`${API_BASE_URL}/auth/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -87,7 +89,8 @@ export default function HomePage() {
         const userData = await response.json()
         setUser(userData)
       } else {
-        localStorage.removeItem('token')
+        localStorage.removeItem('authToken')
+        localStorage.removeItem('user')
         window.location.href = '/login'
       }
     } catch (error) {
@@ -98,8 +101,8 @@ export default function HomePage() {
 
   const fetchLeads = async () => {
     try {
-      const token = localStorage.getItem('token')
-      const response = await fetch('/api/leads', {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`${API_BASE_URL}/leads`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -117,7 +120,8 @@ export default function HomePage() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('user')
     window.location.href = '/login'
   }
 
