@@ -1,23 +1,21 @@
 version: 1
-applications:
-  - appRoot: .
-    frontend:
-      phases:
-        preBuild:
-          commands:
-            - echo "Building VantagePoint CRM Next.js SSR Application"
-            - npm ci --cache .npm --prefer-offline
-        build:
-          commands:
-            - echo "Starting Next.js SSR build process"
-            - npm run build
-            - echo "Next.js SSR build completed successfully"
-      artifacts:
-        baseDirectory: .next
-        files:
-          - '**/*'
-      cache:
-        paths:
-          - node_modules/**/*
-          - .next/cache/**/*
-          - .npm/**/*
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - echo "Building VantagePoint CRM Next.js SSR Application"
+        - npm ci --cache .npm --prefer-offline
+    build:
+      commands:
+        - echo "Starting Next.js SSR build process"
+        - npm run build
+        - echo "Next.js SSR build completed successfully"
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*
+      - .npm/**/*
