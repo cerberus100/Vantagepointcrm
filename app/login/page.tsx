@@ -30,9 +30,11 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const router = useRouter()
 
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3.83.217.40/api/v1'
+
   useEffect(() => {
     // Check if already logged in
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem('authToken')
     if (token) {
       router.push('/')
     }
@@ -44,7 +46,7 @@ export default function LoginPage() {
     setError('')
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -54,8 +56,10 @@ export default function LoginPage() {
 
       if (response.ok) {
         const data = await response.json()
-        localStorage.setItem('token', data.access_token)
-        router.push('/')
+        localStorage.setItem('authToken', data.access_token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+        // Use window.location for static export
+        window.location.href = '/'
       } else {
         const errorData = await response.json()
         setError(errorData.detail || 'Login failed')

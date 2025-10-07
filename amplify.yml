@@ -3,19 +3,17 @@ frontend:
   phases:
     preBuild:
       commands:
-        - echo "Building VantagePoint CRM Next.js SSR Application"
-        - npm ci --cache .npm --prefer-offline
+        - echo "Building VantagePoint CRM Static Export"
+        - npm ci
     build:
       commands:
-        - echo "Starting Next.js SSR build process"
+        - echo "NEXT_PUBLIC_API_URL=https://3.83.217.40/api/v1" >> .env.production
         - npm run build
-        - echo "Next.js SSR build completed successfully"
   artifacts:
-    baseDirectory: .next
+    baseDirectory: out
     files:
       - '**/*'
   cache:
     paths:
       - node_modules/**/*
-      - .next/cache/**/*
       - .npm/**/*
