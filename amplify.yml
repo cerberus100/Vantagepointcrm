@@ -1,26 +1,20 @@
 version: 1
-frontend:
-  phases:
-    preBuild:
-      commands:
-        - echo "Current directory:" && pwd
-        - echo "Directory contents:" && ls -la
-        - echo "Building VantagePoint CRM Static Export"
-        - npm install --force
-        - echo "Dependencies installed successfully"
-    build:
-      commands:
-        - echo "NEXT_PUBLIC_API_URL=https://3.83.217.40/api/v1" >> .env.production
-        - echo "Starting build..."
-        - npm run build 2>&1 || true
-        - echo "Checking if out directory exists:" && ls -la out/ || echo "No out directory found"
-        - echo "Creating out directory if missing" && mkdir -p out
-        - echo "Build phase completed"
-  artifacts:
-    baseDirectory: out
-    files:
-      - '**/*'
-  cache:
-    paths:
-      - node_modules/**/*
-      - .npm/**/*
+applications:
+  - appRoot: frontend-nextjs
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - echo "App root:" && pwd
+            - npm ci
+        build:
+          commands:
+            - echo "NEXT_PUBLIC_API_URL=https://3.83.217.40/api/v1" >> .env.production
+            - npm run build
+      artifacts:
+        baseDirectory: out
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
