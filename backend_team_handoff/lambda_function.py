@@ -758,16 +758,15 @@ def lambda_handler(event, context):
 
         print(f"🔥 VantagePoint {method} {path} - {len(LEADS)} leads, {len(USERS)} users")
 
-        # CORS headers - Restrict to specific origins for security
+        # CORS headers - SECURE: Only allow specific production domains
         origin = headers.get('origin', '')
         allowed_origins = [
-            'https://main.d2q8k9j5m6l3x4.amplifyapp.com',
             'https://vantagepointcrm.com',
-            'http://localhost:3000',
-            'http://localhost:8000'
+            'https://main.d2q8k9j5m6l3x4.amplifyapp.com'
         ]
 
-        cors_origin = origin if origin in allowed_origins else allowed_origins[0]
+        # Only allow production domains, block localhost in production
+        cors_origin = origin if origin in allowed_origins else 'https://vantagepointcrm.com'
 
         response_headers = {
             'Access-Control-Allow-Origin': cors_origin,
