@@ -139,7 +139,7 @@ export default function LoginPage() {
 
               <Box sx={{ mt: 2, textAlign: 'center' }}>
                 <Typography variant="body2" color="textSecondary">
-                  Demo credentials: admin / admin123
+                  Demo credentials: admin / VantagePoint2024!
                 </Typography>
               </Box>
             </Box>
