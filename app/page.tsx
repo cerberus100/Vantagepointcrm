@@ -26,6 +26,7 @@ import {
   People,
   Assessment
 } from '@mui/icons-material'
+import { Alert } from '@mui/material'
 import { Toaster } from 'react-hot-toast'
 
 // Create theme
@@ -62,23 +63,49 @@ export default function HomePage() {
   const [user, setUser] = useState<User | null>(null)
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3.83.217.40/api/v1'
-
   useEffect(() => {
-    checkAuth()
-    fetchLeads()
+    const initAuth = async () => {
+      await checkAuth()
+      // Only fetch leads if authentication was successful
+      if (localStorage.getItem('authToken')) {
+        fetchLeads()
+      } else {
+        // If no token after auth check, redirect to login
+        setTimeout(() => {
+          if (!localStorage.getItem('authToken')) {
+            window.location.replace('/login')
+          }
+        }, 100)
+      }
+    }
+    initAuth()
+
+    // Fallback timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (loading && !user) {
+        console.warn('Loading timeout reached, redirecting to login')
+        window.location.replace('/login')
+      }
+    }, 5000)
+
+    return () => clearTimeout(timeout)
   }, [])
 
   const checkAuth = async () => {
     try {
       const token = localStorage.getItem('authToken')
       if (!token) {
-        window.location.href = '/login'
+        console.log('No token found, redirecting to login')
+        // Use replace to prevent back button issues
+        window.location.replace('/login')
         return
       }
 
+      console.log('Token found, checking authentication...')
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3.83.217.40/api/v1'
       const response = await fetch(`${API_BASE_URL}/auth/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -86,22 +113,27 @@ export default function HomePage() {
       })
 
       if (response.ok) {
-        const userData = await response.json()
+        const responseData = await response.json()
+        const userData = responseData.data || responseData
+        console.log('Authentication successful:', userData)
         setUser(userData)
+        setLoading(false)
       } else {
+        console.error('Auth check failed with status:', response.status)
         localStorage.removeItem('authToken')
-        localStorage.removeItem('user')
-        window.location.href = '/login'
+        window.location.replace('/login')
       }
     } catch (error) {
       console.error('Auth check failed:', error)
-      window.location.href = '/login'
+      localStorage.removeItem('authToken')
+      window.location.replace('/login')
     }
   }
 
   const fetchLeads = async () => {
     try {
       const token = localStorage.getItem('authToken')
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3.83.217.40/api/v1'
       const response = await fetch(`${API_BASE_URL}/leads`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -111,9 +143,32 @@ export default function HomePage() {
       if (response.ok) {
         const data = await response.json()
         setLeads(data.leads || [])
+      } else if (response.status === 400 && response.statusText.includes('numeric string')) {
+        // Backend has a bug with ParseIntPipe, show mock data for demo
+        console.warn('Backend API has validation issues, showing demo data')
+        setError('Using demo data - backend API needs fixing')
+        setLeads([
+          {
+            id: 1,
+            practice_name: 'Demo Medical Practice',
+            owner_name: 'Dr. Smith',
+            specialty: 'Cardiology',
+            priority: 'high',
+            status: 'contacted',
+            score: 85
+          }
+        ])
+      } else {
+        console.error('Failed to fetch leads:', response.status, response.statusText)
+        setError(`API Error: ${response.status} ${response.statusText}`)
+        // Set empty leads array for graceful degradation
+        setLeads([])
       }
     } catch (error) {
       console.error('Failed to fetch leads:', error)
+      setError('Network error - unable to connect to API')
+      // Set empty leads array for graceful degradation
+      setLeads([])
     } finally {
       setLoading(false)
     }
@@ -121,7 +176,6 @@ export default function HomePage() {
 
   const handleLogout = () => {
     localStorage.removeItem('authToken')
-    localStorage.removeItem('user')
     window.location.href = '/login'
   }
 
@@ -215,6 +269,11 @@ export default function HomePage() {
       </AppBar>
 
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+        {error && (
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
         <Grid container spacing={3}>
           {/* Stats Cards */}
           <Grid item xs={12} sm={6} md={3}>
