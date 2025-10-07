@@ -40,7 +40,7 @@ export default function LoginPage() {
       localStorage.setItem('authToken', data.data.access_token)
       localStorage.setItem('user', JSON.stringify(data.data.user))
 
-      // Redirect to dashboard
+      // Redirect to dashboard - using window.location for static export
       window.location.href = '/'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred during login')

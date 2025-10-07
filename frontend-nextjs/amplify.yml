@@ -11,7 +11,7 @@ applications:
             - echo "NEXT_PUBLIC_API_URL=https://3.83.217.40/api/v1" >> .env.production
             - npm run build
       artifacts:
-        baseDirectory: .next
+        baseDirectory: out
         files:
           - '**/*'
       cache:
